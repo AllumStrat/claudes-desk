@@ -143,7 +143,7 @@ export function checkSchema(ctx, r) {
     if (missing.length) {
       r.add(
         issue('schema-local-fields', C, critical.length ? 'medium' : 'low', {
-          issue: `${typesOf(node)[0]} markup is missing fields`,
+          issue: `${safeType(typesOf(node)[0])} markup is missing fields`,
           impact: 'Complete business markup is a strong signal for local results and keeps details consistent across search.',
           evidence: `Missing: ${missing.join(', ')}.`,
           fix: 'Fill in the missing properties with the exact name, address and phone used on your business profile.',
@@ -244,4 +244,9 @@ export function checkHreflang(ctx, r) {
     );
   }
   if (!invalid.length && !relative.length && self) r.add(pass('hreflang-ok', C, 'hreflang tags look valid'));
+}
+
+// Schema type names come from the page, so keep only letters and digits.
+function safeType(t) {
+  return String(t || '').replace(/^.*[/#]/, '').replace(/[^A-Za-z0-9]/g, '').slice(0, 40) || 'Business';
 }

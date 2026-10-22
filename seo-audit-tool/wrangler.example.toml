@@ -1,27 +1,56 @@
-# Example Worker config. Copy to wrangler.toml when you are ready to try a
-# private preview deploy. Nothing in this repo deploys automatically.
+# Example Worker config. Copy to wrangler.toml only when you are ready for a
+# private preview. Nothing in this repo deploys or creates anything by itself.
+# The ids below are placeholders: create the D1 database and rate limiter in
+# your own account first, then paste their ids here.
 name = "allum-seo-audit"
 main = "src/worker/index.js"
-compatibility_date = "2026-10-01"
+compatibility_date = "2026-10-15"
 compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
 
-# Jev through Workers AI (set JEV_PROVIDER = "workers-ai" below to use it)
+# Users, credits and audit history. Create with:
+#   npx wrangler d1 create allum-seo-audit
+#   npx wrangler d1 migrations apply allum-seo-audit --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "allum-seo-audit"
+database_id = "PASTE-THE-ID-FROM-wrangler-d1-create"
+migrations_dir = "migrations"
+
+# Sign-in and weekly emails through Cloudflare Email Service
+# (the sending domain has to be onboarded in the dashboard first).
+[[send_email]]
+name = "EMAIL"
+
+# Jev through Workers AI (JEV_PROVIDER = "workers-ai" below turns it on)
 [ai]
 binding = "AI"
 
-# Shared per-IP rate limit across all Worker instances
+# First, cheap per-IP limit before any database work
 [[ratelimits]]
-name = "AUDIT_RATE_LIMITER"
+name = "IP_RATE_LIMITER"
 namespace_id = "1001"
-simple = { limit = 5, period = 60 }
+simple = { limit = 30, period = 60 }
+
+# Hourly job: weekly re-checks that are due, and cleanup
+[triggers]
+crons = ["17 * * * *"]
 
 [vars]
-JEV_PROVIDER = "off"
-# ALLOWED_ORIGINS = "https://allumstrategies.com"
+APP_ORIGIN = "https://audit.allumstrategies.com"
+EMAIL_PROVIDER = "cloudflare"
+EMAIL_FROM = "Allum SEO Audit <audit@allumstrategies.com>"
+JEV_PROVIDER = "workers-ai"
+RUNS_PER_MONTH = "20"
+AUDITS_ENABLED = "1"
 
-# Secrets (set with: npx wrangler secret put NAME)
-# TURNSTILE_SECRET, TYPESAFE_API_KEY
+# Secrets, set with: npx wrangler secret put NAME
+#   HASH_SALT              any long random string
+#   TURNSTILE_SITE_KEY     (not secret, but kept with its pair)
+#   TURNSTILE_SECRET
+#   STRIPE_SECRET_KEY      sk_test_... until you choose to go live
+#   STRIPE_PRICE_ID        price_... for the $5 monthly price
+#   STRIPE_WEBHOOK_SECRET  whsec_... from the webhook endpoint

@@ -32,6 +32,17 @@ test('front end never writes HTML from data', async () => {
   assert.doesNotMatch(page, /<script>(?!<\/script>)|\son[a-z]+=/i, 'no inline scripts or handlers (CSP)');
 });
 
+test('every element the page script uses exists in the page', async () => {
+  const js = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  const page = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const ids = new Set([...js.matchAll(/\$\('([a-z-]+)'\)/g)].map((m) => m[1]));
+  for (const name of [...js.matchAll(/showHumanCheck\('([a-z]+)'\)/g)].map((m) => m[1])) ids.add(`ts-${name}`);
+  assert.ok(ids.size > 20);
+  for (const id of ids) assert.match(page, new RegExp(`id="${id}"`), id);
+  // Payment pages are only ever Stripe's own.
+  assert.match(js, /u\.hostname === 'checkout\.stripe\.com' \|\| u\.hostname === 'billing\.stripe\.com'/);
+});
+
 test('DNS over HTTPS resolver returns A and AAAA records', async () => {
   const fetchImpl = async (url) => {
     const type = new URL(url).searchParams.get('type');
