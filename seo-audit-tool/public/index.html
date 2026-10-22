@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>SEO Audit (test)</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>SEO audit (test version)</h1>
+    <p class="muted">Enter a page URL. The audit checks that page and up to a few pages it links to.</p>
+    <form id="audit-form" autocomplete="off">
+      <label for="url">Page URL</label>
+      <div class="row">
+        <input id="url" name="url" type="text" inputmode="url" placeholder="example.com" maxlength="2048" required>
+        <button id="run" type="submit">Run audit</button>
+      </div>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section id="report" hidden></section>
+  </main>
+</body>
+</html>

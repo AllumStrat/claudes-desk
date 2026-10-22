@@ -1,0 +1,27 @@
+# Example Worker config. Copy to wrangler.toml when you are ready to try a
+# private preview deploy. Nothing in this repo deploys automatically.
+name = "allum-seo-audit"
+main = "src/worker/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Jev through Workers AI (set JEV_PROVIDER = "workers-ai" below to use it)
+[ai]
+binding = "AI"
+
+# Shared per-IP rate limit across all Worker instances
+[[ratelimits]]
+name = "AUDIT_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
+[vars]
+JEV_PROVIDER = "off"
+# ALLOWED_ORIGINS = "https://allumstrategies.com"
+
+# Secrets (set with: npx wrangler secret put NAME)
+# TURNSTILE_SECRET, TYPESAFE_API_KEY

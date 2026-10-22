@@ -1,0 +1,19 @@
+{
+  "name": "allum-seo-audit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "URL SEO audit tool, test version. Cheerio checks, optional Jev judgment layer, hardened for public use.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.10"
+  },
+  "scripts": {
+    "start": "node src/node/server.js",
+    "audit": "node src/node/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "cheerio": "1.0.0",
+    "undici": "^6.21.0"
+  }
+}
