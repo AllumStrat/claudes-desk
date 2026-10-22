@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OmniVoice Podcast</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>OmniVoice Podcast</h1>
+    <p class="sub">Two cloned voices, one interview, one episode. Runs on your Mac.</p>
+    <div id="status" class="status">Checking OmniVoice…</div>
+  </header>
+
+  <section>
+    <h2><span class="n">1</span> Voices</h2>
+    <p class="hint">Each person records 5 to 10 seconds of clear speech in a quiet room. Reading the sentence below means you know the transcript exactly, which gives the best clone.
+      Only clone the voice of someone who has agreed to it.</p>
+    <blockquote id="refSentence">Hi, I'm recording this short clip so my voice can be used on the podcast. I talk about my work, what I've learned, and where things are heading next.</blockquote>
+    <div class="voices">
+      <div class="voice card" data-role="host">
+        <h3>Host</h3>
+        <label>Name <input class="v-name" value="Jacob"></label>
+        <div class="row">
+          <button class="v-rec">Record</button>
+          <label class="file">Upload clip<input class="v-file" type="file" accept="audio/*"></label>
+          <span class="v-timer"></span>
+        </div>
+        <audio class="v-audio" controls hidden></audio>
+        <label>What the clip says <span class="opt">(leave blank to auto-transcribe)</span>
+          <textarea class="v-transcript" rows="3"></textarea></label>
+        <button class="link v-use-ref">Use the sentence above</button>
+        <div class="row">
+          <button class="v-save">Save voice</button>
+          <button class="v-test secondary">Test voice</button>
+          <span class="v-msg msg"></span>
+        </div>
+        <audio class="v-test-audio" controls hidden></audio>
+      </div>
+      <div class="voice card" data-role="guest">
+        <h3>Guest</h3>
+        <label>Name <input class="v-name" value=""></label>
+        <div class="row">
+          <button class="v-rec">Record</button>
+          <label class="file">Upload clip<input class="v-file" type="file" accept="audio/*"></label>
+          <span class="v-timer"></span>
+        </div>
+        <audio class="v-audio" controls hidden></audio>
+        <label>What the clip says <span class="opt">(leave blank to auto-transcribe)</span>
+          <textarea class="v-transcript" rows="3"></textarea></label>
+        <button class="link v-use-ref">Use the sentence above</button>
+        <div class="row">
+          <button class="v-save">Save voice</button>
+          <button class="v-test secondary">Test voice</button>
+          <span class="v-msg msg"></span>
+        </div>
+        <audio class="v-test-audio" controls hidden></audio>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> Interview</h2>
+    <div class="grid">
+      <label>Show name <input id="showName" value="The Allum Hour"></label>
+      <label>Topic <input id="topic" placeholder="e.g. growing a local trades business"></label>
+    </div>
+    <label>About the guest <textarea id="guestBio" rows="2" placeholder="Who they are, what they do"></textarea></label>
+    <div class="grid">
+      <label>Claude API key <span class="opt">(optional, only needed for Claude writing)</span>
+        <input id="apiKey" type="password" placeholder="sk-ant-… or leave blank to use ANTHROPIC_API_KEY"></label>
+      <label>Questions <input id="qCount" type="number" min="1" max="15" value="6"></label>
+    </div>
+    <div class="row">
+      <button id="writeQuestions">Write questions with Claude</button>
+      <span id="qMsg" class="msg"></span>
+    </div>
+    <label>Questions <span class="opt">(one per line, edit freely)</span>
+      <textarea id="questions" rows="7"></textarea></label>
+    <div class="row">
+      <button id="copyPacket" class="secondary">Copy the note for your guest</button>
+      <span id="packetMsg" class="msg"></span>
+    </div>
+    <h3>Guest's answers</h3>
+    <p class="hint">Paste what they wrote back under each question. Their cloned voice will say these words.</p>
+    <div id="answers"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> Script</h2>
+    <div class="row">
+      <button id="writeScript">Write script with Claude</button>
+      <button id="simpleScript" class="secondary">Build script without AI</button>
+      <button id="sampleScript" class="secondary">Load sample script</button>
+      <span id="sMsg" class="msg"></span>
+    </div>
+    <label>One line per turn, starting with HOST: or GUEST:
+      <textarea id="script" rows="14" spellcheck="true"></textarea></label>
+    <div id="scriptInfo" class="hint"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span> Make the episode</h2>
+    <div class="grid three">
+      <label>Quality
+        <select id="numStep"><option value="16">Fast (16 steps)</option><option value="32" selected>Standard (32 steps)</option></select></label>
+      <label>Pause between turns (ms) <input id="gapMs" type="number" min="0" max="3000" step="50" value="350"></label>
+      <label>Speed <input id="speed" type="number" min="0.5" max="2" step="0.05" value="1"></label>
+    </div>
+    <div class="row">
+      <button id="render" class="primary">Make episode</button>
+      <span id="rMsg" class="msg"></span>
+    </div>
+    <div id="progress" hidden>
+      <progress id="bar" max="1" value="0"></progress>
+      <div id="progressText" class="hint"></div>
+    </div>
+    <div id="result" hidden class="card">
+      <h3>Your episode</h3>
+      <audio id="episode" controls></audio>
+      <div class="row" id="downloads"></div>
+    </div>
+    <details id="pastWrap">
+      <summary>Earlier episodes</summary>
+      <ul id="past"></ul>
+    </details>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

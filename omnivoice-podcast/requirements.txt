@@ -1,0 +1,7 @@
+# The web app's packages. OmniVoice itself (and torch) are installed separately; see README.
+fastapi
+uvicorn
+python-multipart
+numpy
+soundfile
+anthropic
