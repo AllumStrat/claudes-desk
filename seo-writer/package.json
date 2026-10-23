@@ -1,0 +1,21 @@
+{
+  "name": "allum-seo-writer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SEO content writer on Claude Sonnet 5.5 that follows the seo-writing skill. Content only; competitor research is a later tier.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "write": "node src/node/cli.js",
+    "compare": "node src/node/compare-cli.js",
+    "check": "node src/node/check-cli.js",
+    "sync-skill": "node scripts/sync-skill.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "undici": "^6.21.0"
+  }
+}
