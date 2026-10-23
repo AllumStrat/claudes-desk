@@ -32,6 +32,7 @@ const USER_ERRORS = {
   TOO_MANY_REDIRECTS: 422,
   BAD_REDIRECT: 422,
   NETWORK: 502,
+  TARGET_LIMIT: 429,
 };
 
 export function normalizeEmail(input) {
@@ -133,6 +134,11 @@ export function createApp(deps) {
       (await limit('audit-day', L.dailyCap, DAY, 'The audit tool is at its daily limit. Try again tomorrow.'))
     );
   }
+
+  // Counts the site an audit's redirects ended on against the per-site limit,
+  // when it is not the site that was typed in.
+  const finalHostCheck = (typed) => async (host) =>
+    siteKey(host) === siteKey(typed) || !(await limit(`audit-target:${siteKey(host)}`, L.auditPerTarget, HOUR, ''));
 
   async function humanCheck(body, ip) {
     if (!deps.verifyHuman) return null;
@@ -267,16 +273,16 @@ export function createApp(deps) {
       return json(503, { error: 'The audit tool is busy. Try again in a minute.' }, { 'retry-after': '30' });
     }
     // Refund rule: the credit comes back only when the start page never
-    // arrived (bad address, DNS, refused, timeout), when the server is busy,
-    // or when saving fails on our side. Once the site has sent its page, the
-    // credit is spent even if the audit then crashes, so a page built to
-    // crash or stall the parser does not get free runs.
+    // arrived (bad address, DNS, refused, timeout), when a limit stopped the
+    // audit, when the server is busy, or when saving fails on our side. Once
+    // the site has sent its page, the credit is spent even if the audit then
+    // crashes, so a page built to crash or stall the parser gets no free runs.
     let report;
     try {
-      report = await runAudit(target.url, deps.auditDeps());
+      report = await runAudit(target.url, { ...deps.auditDeps(), checkFinalHost: finalHostCheck(target.hostname) });
     } catch (err) {
       const known = err instanceof AuditError && USER_ERRORS[err.code];
-      if (known && !err.reachedSite) await refund().catch(() => {});
+      if (known && err.refund) await refund().catch(() => {});
       if (known) return json(USER_ERRORS[err.code], { error: err.message, code: err.code });
       log('audit failed after the page arrived', err?.message);
       return json(500, { error: "Something went wrong while checking this site's page. The run still counts, because the page was read." });
@@ -466,7 +472,7 @@ export function createApp(deps) {
       }
       try {
         const before = await store.lastAuditFor(user.id, url);
-        const report = await runAudit(url, deps.auditDeps());
+        const report = await runAudit(url, { ...deps.auditDeps(), checkFinalHost: finalHostCheck(new URL(url).hostname) });
         await store.saveAudit({ userId: user.id, url, kind: 'weekly', report, now: now() });
         const diff = diffReports(before?.report, report);
         if (hasChanges(diff)) await mailer.send({ to: user.email, ...watchEmail({ appName: config.appName, appOrigin: config.appOrigin, url, diff }) });

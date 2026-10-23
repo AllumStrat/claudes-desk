@@ -93,6 +93,45 @@ test('request volume stays bounded on a link-heavy page', async () => {
   assert.ok(r.requestsMade <= 60);
 });
 
+test('every audit has a request budget, redirect hops included', async () => {
+  // Every link and image redirects twice before answering, and they all
+  // point at one other host.
+  const routes = { 'https://hop.example.com/': html(`<title>t</title>${Array.from({ length: 40 }, (_, i) => `<a href="https://victim.example.org/l${i}">x</a><img src="https://victim.example.org/i${i}.png">`).join('')}`) };
+  for (let i = 0; i < 40; i++) {
+    for (const kind of ['l', 'i']) {
+      routes[`https://victim.example.org/${kind}${i}`] = { status: 301, headers: { location: `https://victim.example.org/${kind}${i}/a` } };
+      routes[`https://victim.example.org/${kind}${i}/a`] = { status: 301, headers: { location: `https://victim.example.org/${kind}${i}/b` } };
+      routes[`https://victim.example.org/${kind}${i}/b`] = { status: 200, headers: { 'content-type': kind === 'l' ? 'text/html' : 'image/png' } };
+    }
+  }
+  const web = fakeWeb(routes);
+  const r = await runAudit('https://hop.example.com/', web);
+  assert.equal(web.calls.filter((c) => c.url.startsWith('https://victim.example.org/')).length, 12);
+  assert.ok(r.httpRequests <= 80);
+  // Requests the budget refused are not reported as broken links or images.
+  assert.ok(!r.issues.some((i) => /broken/.test(i.id)), r.issues.map((i) => i.id).join(','));
+
+  const many = Array.from({ length: 500 }, (_, i) => `<a href="https://ext${i}.example.net/">x</a><img src="https://cdn${i}.example.net/i.png">`).join('');
+  const web2 = fakeWeb({ 'https://many.example.com/': html(`<title>t</title>${many}`) });
+  const r2 = await runAudit('https://many.example.com/', { ...web2, limits: { maxRequests: 10 } });
+  assert.equal(web2.calls.length, 10);
+  assert.equal(r2.httpRequests, 10);
+});
+
+test('the final host after redirects is checked against the per-site limit', async () => {
+  const web = fakeWeb({
+    'https://typed.example.com/': { status: 301, headers: { location: 'https://victim.example.org/' } },
+    'https://victim.example.org/': html('<title>v</title>'),
+  });
+  const seen = [];
+  await assert.rejects(
+    runAudit('https://typed.example.com/', { ...web, checkFinalHost: async (h) => (seen.push(h), false) }),
+    (err) => err instanceof AuditError && err.code === 'TARGET_LIMIT' && err.refund === true,
+  );
+  assert.deepEqual(seen, ['victim.example.org']);
+  assert.equal(web.calls.length, 2); // the typed page and its redirect, nothing more
+});
+
 test('limits cannot be raised past the hard ceilings', () => {
   const l = clampLimits({ maxPages: 1000, maxLinkChecks: 1e6, auditTimeoutMs: 1e9, bogus: 5, maxImageChecks: -1 });
   assert.equal(l.maxPages, 10);

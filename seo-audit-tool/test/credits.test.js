@@ -228,6 +228,18 @@ test('refused audits do not count toward the daily cap or the per-site limit', a
   assert.equal(await count('audit-target:ok.example.com'), 1);
 });
 
+test('domains that redirect to one site share its per-site limit', async () => {
+  const routes = { 'https://victim.example.org/': GOOD_SITE };
+  for (const n of [1, 2, 3]) routes[`https://a${n}.example.com/`] = { status: 301, headers: { location: 'https://victim.example.org/' } };
+  const ctx = makeApp({ routes, env: { AUDIT_TARGET_LIMIT: '2', AUDIT_RATE_LIMIT: '100', AUDITS_PER_HOUR_ACCOUNT: '100' } });
+  const c = client(ctx);
+  await makePro(ctx, c);
+  const statuses = [];
+  for (const n of [1, 2, 3]) statuses.push((await c.post('/api/audit', { url: `a${n}.example.com` })).status);
+  assert.deepEqual(statuses, [200, 200, 429]);
+  assert.equal((await c.get('/api/me')).data.user.runsLeft, 18); // the refused one was refunded
+});
+
 test('the off switch pauses audits', async () => {
   const ctx = makeApp({ env: { AUDITS_ENABLED: '0' } });
   const c = client(ctx);

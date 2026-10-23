@@ -30,6 +30,11 @@ export const DEFAULT_LIMITS = Object.freeze({
   maxRobotsBytes: 512_000,
   maxSitemapBytes: 5_000_000,
   concurrency: 3,
+  // HTTP requests per audit, redirect hops included. The start page, robots,
+  // sitemaps and crawl need at most 54 even with every hop used, so only the
+  // link and image samples can be cut short.
+  maxRequests: 80,
+  maxPerOtherHost: 12, // to any one host that is not the audited site
 });
 
 // Crawled titles and descriptions are kept this long in the report.
@@ -39,7 +44,7 @@ const MAX_TITLE = 300;
 const MAX_ROBOTS_CHECKS = 50;
 
 // Hard ceilings a caller cannot raise.
-const CEILINGS = { maxPages: 10, maxLinkChecks: 40, maxExternalLinkChecks: 15, maxImageChecks: 20, maxRedirects: 10, auditTimeoutMs: 60_000 };
+const CEILINGS = { maxPages: 10, maxLinkChecks: 40, maxExternalLinkChecks: 15, maxImageChecks: 20, maxRedirects: 10, auditTimeoutMs: 60_000, maxRequests: 100, maxPerOtherHost: 20 };
 
 export function clampLimits(overrides = {}) {
   const out = { ...DEFAULT_LIMITS };
@@ -52,13 +57,14 @@ export function clampLimits(overrides = {}) {
 
 const HTML_TYPE = /text\/html|application\/xhtml\+xml/;
 
-// `reachedSite` is false when the start page never came back (bad address,
-// DNS, refused, timed out). The app refunds the credit only in that case.
+// `refund` is true when the audit did no work on the site's content: the
+// start page never came back (bad address, DNS, refused, timed out) or a
+// limit stopped it. The app gives the credit back only then.
 export class AuditError extends Error {
-  constructor(code, message, { reachedSite = false } = {}) {
+  constructor(code, message, { refund = false } = {}) {
     super(message);
     this.code = code;
-    this.reachedSite = reachedSite;
+    this.refund = refund;
   }
 }
 
@@ -70,15 +76,32 @@ export async function runAudit(input, deps) {
   const started = Date.now();
   const limits = clampLimits(deps.limits);
   const checked = checkUrl(input, { allowBareHost: true });
-  if (!checked.ok) throw new AuditError('INVALID_URL', checked.reason);
+  if (!checked.ok) throw new AuditError('INVALID_URL', checked.reason, { refund: true });
 
   const deadline = new AbortController();
   const deadlineTimer = setTimeout(() => deadline.abort(new FetchError('TIMEOUT', 'The audit ran out of time.')), limits.auditTimeoutMs);
   const notes = [];
   let requests = 0;
 
+  // Every HTTP request, redirect hops included, passes this budget.
+  let httpRequests = 0;
+  let siteHost = null; // set once the start page is in
+  const perHost = new Map();
+  const bareHost = (u) => new URL(u).hostname.replace(/^www\./, '');
+  const fetchImpl = (url, init) => {
+    if (httpRequests >= limits.maxRequests) throw new FetchError('BUDGET', 'The audit reached its request limit.');
+    const host = bareHost(url);
+    if (siteHost && host !== siteHost) {
+      const n = perHost.get(host) || 0;
+      if (n >= limits.maxPerOtherHost) throw new FetchError('BUDGET', 'The audit reached its request limit for that host.');
+      perHost.set(host, n + 1);
+    }
+    httpRequests++;
+    return deps.fetchImpl(url, init);
+  };
+
   const fetchOpts = (extra = {}) => ({
-    fetchImpl: deps.fetchImpl,
+    fetchImpl,
     resolveHost: deps.resolveHost,
     maxRedirects: limits.maxRedirects,
     timeoutMs: limits.requestTimeoutMs,
@@ -104,8 +127,15 @@ export async function runAudit(input, deps) {
     try {
       main = await get(checked.url, { maxBytes: limits.maxHtmlBytes });
     } catch (err) {
-      if (err instanceof FetchError) throw new AuditError(err.code, err.message);
+      if (err instanceof FetchError) throw new AuditError(err.code, err.message, { refund: true });
       throw err;
+    }
+    siteHost = bareHost(main.url);
+    // The per-site limit also applies to where the redirects ended up, so many
+    // domains that redirect to one site cannot each count as a new site.
+    const finalHost = new URL(main.url).hostname;
+    if (deps.checkFinalHost && finalHost !== checked.hostname && !(await deps.checkFinalHost(finalHost))) {
+      throw new AuditError('TARGET_LIMIT', 'That site has been audited a lot recently. Try again later.', { refund: true });
     }
 
     const isHtml = HTML_TYPE.test(main.contentType) || (!main.contentType && /<html/i.test(main.body || ''));
@@ -138,7 +168,7 @@ export async function runAudit(input, deps) {
       if (main.status < 300) {
         notes.push({ category: 'content', label: 'Not an HTML page', value: `The URL returned ${main.contentType || 'an unknown type'}, so page checks were skipped.` });
       }
-      return finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo: null });
+      return finalize({ r, ctx, started, limits, notes, requests, httpRequests, checked, jevInfo: null });
     }
 
     // Bounded crawl of same-site pages linked from the start page, respecting robots.txt.
@@ -162,8 +192,9 @@ export async function runAudit(input, deps) {
       }
       toCrawl.push(u);
     }
-    const crawl = await mapLimit(toCrawl, limits.concurrency, async (u) => {
+    let crawl = await mapLimit(toCrawl, limits.concurrency, async (u) => {
       const res = await tryGet(u, { maxBytes: limits.maxHtmlBytes });
+      if (res.error === 'BUDGET') return null;
       if (res.error) return { url: u, status: 0, error: res.error };
       const html = HTML_TYPE.test(res.contentType);
       let p = null;
@@ -184,6 +215,7 @@ export async function runAudit(input, deps) {
         noindex: p ? /noindex/.test(p.robotsMeta || '') || /noindex/i.test(res.headers['x-robots-tag'] || '') : false,
       };
     });
+    crawl = crawl.filter(Boolean);
     ctx.crawl = [
       {
         url: main.url,
@@ -222,7 +254,7 @@ export async function runAudit(input, deps) {
       if (!res.error && (res.status === 405 || res.status === 501 || res.status === 403)) res = await tryGet(u, { readBody: false });
       // Sites that block bots answer 403/429 to anything automated; that is not a broken link.
       const status = res.status === 403 || res.status === 429 || res.status === 999 ? 0 : res.status;
-      const error = res.error && res.error !== 'BLOCKED_URL' && res.error !== 'BLOCKED_ADDRESS' ? res.error : null;
+      const error = res.error && !['BLOCKED_URL', 'BLOCKED_ADDRESS', 'BUDGET'].includes(res.error) ? res.error : null;
       return { url: u, internal, status, error, redirected: !res.error && res.chain?.length > 1 };
     });
     ctx.linkResults = ctx.linkResults.filter((x) => x.status || x.error);
@@ -262,7 +294,7 @@ export async function runAudit(input, deps) {
       }
     }
 
-    return finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo });
+    return finalize({ r, ctx, started, limits, notes, requests, httpRequests, checked, jevInfo });
   } finally {
     clearTimeout(deadlineTimer);
   }
@@ -294,7 +326,7 @@ async function findSitemap(origin, robotsParsed, pageUrl, tryGet, limits) {
   return { found: false, tried };
 }
 
-function finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo }) {
+function finalize({ r, ctx, started, limits, notes, requests, httpRequests, checked, jevInfo }) {
   const { score, grade, categories } = scoreResults(r);
   const issues = sortIssues(r.issues);
   const counts = {
@@ -328,6 +360,7 @@ function finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo }
     pagesCrawled: pages.length,
     redirectChain: ctx.main.chain,
     requestsMade: requests,
+    httpRequests,
     judgment: jevInfo,
     limits: { maxPages: limits.maxPages, maxLinkChecks: limits.maxLinkChecks, maxImageChecks: limits.maxImageChecks },
   });
