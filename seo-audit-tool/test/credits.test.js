@@ -99,6 +99,37 @@ test('a site that cannot be reached refunds the credit', async () => {
   assert.equal((await c.get('/api/me')).data.user.freeUsed, false);
 });
 
+test('a crash after the page arrived still uses the credit', async () => {
+  // A response whose header value throws when the checks read it, so the
+  // audit fails after the site has sent its page.
+  const poisoned = () => ({
+    status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'text/html' : null), forEach: (cb) => cb({ toString() { throw new Error('boom'); } }, 'x-robots-tag') },
+    body: null,
+    text: async () => '<title>x</title>',
+  });
+  const ctx = makeApp({ routes: { 'https://ok.example.com/': poisoned } });
+  const c = client(ctx);
+  await c.signIn('a@example.com');
+  const res = await c.post('/api/audit', { url: 'ok.example.com' });
+  assert.equal(res.status, 500);
+  assert.match(res.data.error, /still counts/);
+  assert.equal((await c.get('/api/me')).data.user.freeUsed, true);
+  assert.ok(ctx.logs.some((l) => /after the page arrived/.test(l)));
+});
+
+test('a failed save gives the credit back', async () => {
+  const ctx = makeApp();
+  const c = client(ctx);
+  await c.signIn('a@example.com');
+  ctx.store.saveAudit = async () => {
+    throw new Error('disk full');
+  };
+  const res = await c.post('/api/audit', { url: 'ok.example.com' });
+  assert.equal(res.status, 500);
+  assert.equal((await c.get('/api/me')).data.user.freeUsed, false);
+});
+
 test('the paid plan gives 20 full audits a period', async () => {
   const ctx = makeApp({ env: { AUDITS_PER_HOUR_ACCOUNT: '100', AUDIT_TARGET_LIMIT: '100', AUDIT_RATE_LIMIT: '100' } });
   const c = client(ctx);

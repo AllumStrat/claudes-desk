@@ -49,10 +49,13 @@ export function clampLimits(overrides = {}) {
 
 const HTML_TYPE = /text\/html|application\/xhtml\+xml/;
 
+// `reachedSite` is false when the start page never came back (bad address,
+// DNS, refused, timed out). The app refunds the credit only in that case.
 export class AuditError extends Error {
-  constructor(code, message) {
+  constructor(code, message, { reachedSite = false } = {}) {
     super(message);
     this.code = code;
+    this.reachedSite = reachedSite;
   }
 }
 
@@ -160,7 +163,12 @@ export async function runAudit(input, deps) {
       const res = await tryGet(u, { maxBytes: limits.maxHtmlBytes });
       if (res.error) return { url: u, status: 0, error: res.error };
       const html = HTML_TYPE.test(res.contentType);
-      const p = html && res.body ? extractPage(res.body, res.url) : null;
+      let p = null;
+      try {
+        p = html && res.body ? extractPage(res.body, res.url) : null;
+      } catch {
+        return { url: u, status: 0, error: 'PARSE_FAILED' };
+      }
       return {
         url: u,
         finalUrl: res.url,

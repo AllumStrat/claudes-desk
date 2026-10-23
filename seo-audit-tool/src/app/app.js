@@ -249,18 +249,31 @@ export function createApp(deps) {
       await refund();
       return json(503, { error: 'The audit tool is busy. Try again in a minute.' }, { 'retry-after': '30' });
     }
+    // Refund rule: the credit comes back only when the start page never
+    // arrived (bad address, DNS, refused, timeout), when the server is busy,
+    // or when saving fails on our side. Once the site has sent its page, the
+    // credit is spent even if the audit then crashes, so a page built to
+    // crash or stall the parser does not get free runs.
     let report;
     try {
       report = await runAudit(target.url, deps.auditDeps());
     } catch (err) {
-      await refund().catch(() => {});
-      if (err instanceof AuditError && USER_ERRORS[err.code]) return json(USER_ERRORS[err.code], { error: err.message, code: err.code });
-      log('audit failed', err?.message);
-      return json(500, { error: 'Something went wrong running the audit.' });
+      const known = err instanceof AuditError && USER_ERRORS[err.code];
+      if (known && !err.reachedSite) await refund().catch(() => {});
+      if (known) return json(USER_ERRORS[err.code], { error: err.message, code: err.code });
+      log('audit failed after the page arrived', err?.message);
+      return json(500, { error: "Something went wrong while checking this site's page. The run still counts, because the page was read." });
     } finally {
       gate.leave();
     }
-    const auditId = await store.saveAudit({ userId: user.id, url: target.url, kind: 'manual', report, now: now() });
+    let auditId;
+    try {
+      auditId = await store.saveAudit({ userId: user.id, url: target.url, kind: 'manual', report, now: now() });
+    } catch (err) {
+      await refund().catch(() => {});
+      log('saving an audit failed', err?.message);
+      return json(500, { error: 'Something went wrong saving the audit. Your run was not used.' });
+    }
     return json(200, { auditId, runsLeft, report: pro ? report : freeReport(report, config.free) });
   }
 
