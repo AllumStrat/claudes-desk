@@ -6,6 +6,7 @@ import { extractPage, parseHtml, hasHtmlDoctype, jsonDepth, MAX_DEPTH, MAX_ELEME
 import { flattenSchema } from '../src/core/checks/rich.js';
 import { runAudit } from '../src/core/audit.js';
 import { fakeWeb, html } from './helpers.js';
+import { capReport, MAX_REPORT_BYTES } from '../src/core/report.js';
 
 const URL0 = 'https://a.example.com/';
 
@@ -82,4 +83,31 @@ test('a hostile page gets a normal report with a complexity issue', async () => 
   const r = await runAudit('https://h.example.com/', web);
   assert.ok(performance.now() - t < 3000);
   assert.ok(r.issues.some((i) => i.id === 'html-too-complex'));
+});
+
+test('huge crawled titles and long link URLs do not bloat the stored report', async () => {
+  const big = (n) => html(`<title>${String(n).repeat(390_000)}</title><p>x</p>`);
+  const links = ['/a', '/b', '/c', '/d'].map((p) => `<a href="${p}">x</a>`).join('') + `<a href="/${'z'.repeat(5000)}">long</a>`;
+  const web = fakeWeb({
+    'https://t.example.com/': html(`<title>${'t'.repeat(390_000)}</title>${links}`),
+    'https://t.example.com/a': big(1),
+    'https://t.example.com/b': big(2),
+    'https://t.example.com/c': big(3),
+    'https://t.example.com/d': big(4),
+  });
+  const r = await runAudit('https://t.example.com/', web);
+  assert.equal(r.pages.length, 5);
+  for (const p of r.pages) assert.ok(p.title.length <= 300, p.url);
+  assert.ok(JSON.stringify(r).length < 64 * 1024);
+  assert.ok(!web.calls.some((c) => c.url.includes('zzzz')));
+});
+
+test('an oversized report is cut down to the cap', () => {
+  const issue = (n) => ({ id: `i${n}`, issue: 'x'.repeat(1500), evidence: 'e'.repeat(5000), fix: 'f'.repeat(1500), priority: 'low' });
+  const report = { score: 1, issues: Array.from({ length: 400 }, (_, n) => issue(n)), passed: [{ label: 'p' }], insights: [{ label: 'l', value: 'v'.repeat(10_000) }], pages: [] };
+  const out = capReport(report);
+  assert.ok(JSON.stringify(out).length <= MAX_REPORT_BYTES);
+  assert.equal(out.trimmed, true);
+  assert.ok(out.issues.length >= 10);
+  assert.equal(capReport({ a: 'short', b: ['y'.repeat(3000)] }).b[0].length, 2000);
 });

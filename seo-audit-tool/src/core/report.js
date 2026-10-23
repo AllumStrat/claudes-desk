@@ -23,6 +23,30 @@ export function scoreResults(results) {
   return { score, grade: grade(score), categories };
 }
 
+// Stored reports stay small: every string is clipped, and if the whole report
+// is still too big, the long lists are cut. A normal report is 10 to 60 KB.
+export const MAX_REPORT_STRING = 2000;
+export const MAX_REPORT_BYTES = 128 * 1024;
+
+function clipStrings(value) {
+  if (typeof value === 'string') return value.length > MAX_REPORT_STRING ? `${value.slice(0, MAX_REPORT_STRING - 1)}…` : value;
+  if (Array.isArray(value)) return value.map(clipStrings);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clipStrings(v)]));
+  return value;
+}
+
+export function capReport(report) {
+  const out = clipStrings(report);
+  const size = () => JSON.stringify(out).length;
+  if (size() <= MAX_REPORT_BYTES) return out;
+  out.trimmed = true;
+  out.passed = [];
+  out.insights = [];
+  for (const i of out.issues) i.evidence = String(i.evidence ?? '').slice(0, 300);
+  while (out.issues.length > 10 && size() > MAX_REPORT_BYTES) out.issues = out.issues.slice(0, Math.floor(out.issues.length / 2));
+  return out;
+}
+
 export function grade(score) {
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';

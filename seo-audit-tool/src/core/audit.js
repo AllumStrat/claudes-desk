@@ -1,14 +1,14 @@
 // Runs a full audit of one URL plus a small, bounded crawl of its site.
 // Runtime-neutral: the caller supplies fetchImpl and resolveHost.
 
-import { checkUrl } from './url-guard.js';
+import { checkUrl, MAX_URL_LENGTH } from './url-guard.js';
 import { safeFetch, FetchError } from './safe-fetch.js';
 import { parseRobots, isAllowed } from './robots.js';
 import { parseSitemap } from './sitemap.js';
 import { extractPage } from './extract.js';
 import { Results } from './findings.js';
-import { scoreResults, sortIssues } from './report.js';
-import { mapLimit, stripHash, looksLikePage } from './util.js';
+import { scoreResults, sortIssues, capReport } from './report.js';
+import { mapLimit, stripHash, looksLikePage, clip } from './util.js';
 import { checkIndexing, normalize } from './checks/indexing.js';
 import { checkOnPage } from './checks/onpage.js';
 import { checkContent, checkImages, checkLinks } from './checks/content.js';
@@ -31,6 +31,9 @@ export const DEFAULT_LIMITS = Object.freeze({
   maxSitemapBytes: 5_000_000,
   concurrency: 3,
 });
+
+// Crawled titles and descriptions are kept this long in the report.
+const MAX_TITLE = 300;
 
 // robots.txt checks made while picking pages to crawl.
 const MAX_ROBOTS_CHECKS = 50;
@@ -147,7 +150,7 @@ export async function runAudit(input, deps) {
     let robotsChecks = 0;
     for (const l of page.links) {
       if (toCrawl.length >= wanted || robotsChecks >= MAX_ROBOTS_CHECKS) break;
-      if (!l.internal || !l.abs || !/^https?:/.test(l.abs) || !looksLikePage(l.abs)) continue;
+      if (!l.internal || !l.abs || !/^https?:/.test(l.abs) || l.abs.length > MAX_URL_LENGTH || !looksLikePage(l.abs)) continue;
       const u = stripHash(l.abs);
       const key = normalize(u);
       if (seen.has(key)) continue;
@@ -174,15 +177,23 @@ export async function runAudit(input, deps) {
         finalUrl: res.url,
         status: res.status,
         isHtml: html,
-        title: p?.title ?? null,
-        description: p?.description ?? null,
+        title: p?.title == null ? null : clip(p.title, MAX_TITLE),
+        description: p?.description == null ? null : clip(p.description, MAX_TITLE),
         h1Count: p ? p.headings.filter((h) => h.level === 1).length : 0,
         wordCount: p?.wordCount ?? 0,
         noindex: p ? /noindex/.test(p.robotsMeta || '') || /noindex/i.test(res.headers['x-robots-tag'] || '') : false,
       };
     });
     ctx.crawl = [
-      { url: main.url, status: main.status, isHtml: true, title: page.title, description: page.description, h1Count: page.headings.filter((h) => h.level === 1).length, wordCount: page.wordCount },
+      {
+        url: main.url,
+        status: main.status,
+        isHtml: true,
+        title: page.title == null ? null : clip(page.title, MAX_TITLE),
+        description: page.description == null ? null : clip(page.description, MAX_TITLE),
+        h1Count: page.headings.filter((h) => h.level === 1).length,
+        wordCount: page.wordCount,
+      },
       ...crawl,
     ];
 
@@ -299,7 +310,7 @@ function finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo }
     words: p.wordCount ?? null,
     error: p.error ?? null,
   }));
-  return {
+  return capReport({
     tool: 'Allum Strategies SEO audit',
     version: '0.1.0',
     url: checked.url,
@@ -319,5 +330,5 @@ function finalize({ r, ctx, started, limits, notes, requests, checked, jevInfo }
     requestsMade: requests,
     judgment: jevInfo,
     limits: { maxPages: limits.maxPages, maxLinkChecks: limits.maxLinkChecks, maxImageChecks: limits.maxImageChecks },
-  };
+  });
 }

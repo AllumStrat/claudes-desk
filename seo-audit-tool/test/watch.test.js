@@ -140,6 +140,21 @@ test('cleanup removes old tokens, sessions, counters and extra audits', async ()
   void c;
 });
 
+test('audits of free accounts expire after 30 days; paid ones stay', async () => {
+  const ctx = makeApp();
+  const { user: pro } = await proUser(ctx);
+  const free = await ctx.store.upsertUser('free@example.com', ctx.time.t);
+  for (const u of [pro, free]) await ctx.store.saveAudit({ userId: u.id, url: 'https://ok.example.com/', kind: 'manual', report: { score: 1, issues: [] }, now: ctx.time.t });
+  ctx.time.t += 29 * DAY;
+  await ctx.store.cleanup(ctx.time.t);
+  assert.equal((await ctx.db.prepare('SELECT COUNT(*) AS n FROM audits').first()).n, 2);
+  ctx.time.t += 2 * DAY;
+  await ctx.store.cleanup(ctx.time.t);
+  const left = await ctx.db.prepare('SELECT user_id FROM audits').all();
+  assert.deepEqual(left.results.map((r) => r.user_id), [pro.id]);
+  await assert.rejects(ctx.store.saveAudit({ userId: pro.id, url: 'u', kind: 'manual', report: { x: 'y'.repeat(300_000) }, now: 1 }), /too large/);
+});
+
 test('report diffs and the free cut', () => {
   const a = { score: 80, issues: [{ id: 'x', issue: 'X', priority: 'high' }, { id: 'y', issue: 'Y', priority: 'low' }] };
   const b = { score: 70, issues: [{ id: 'y', issue: 'Y', priority: 'low' }, { id: 'z', issue: 'Z', priority: 'medium' }] };

@@ -4,6 +4,8 @@
 import { randomId } from './crypto.js';
 
 const DEAD_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
+const MAX_STORED_REPORT = 256 * 1024;
+const FREE_AUDIT_DAYS = 30;
 
 export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 } = {}) {
   const one = (sql, ...args) => db.prepare(sql).bind(...args).first();
@@ -91,6 +93,10 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
 
     // Audit history
     async saveAudit({ userId, url, kind, report, now }) {
+      const text = JSON.stringify(report);
+      // runAudit keeps reports far below this; refuse anything bigger rather
+      // than fill the database (D1 also refuses rows over 2 MB).
+      if (text.length > MAX_STORED_REPORT) throw new Error('report too large to store');
       const id = randomId();
       await run(
         'INSERT INTO audits (id, user_id, url, kind, created_at, score, grade, report) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -101,7 +107,7 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
         now,
         report.score ?? null,
         report.grade ?? null,
-        JSON.stringify(report),
+        text,
       );
       return id;
     },
@@ -194,9 +200,11 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
       );
     },
 
-    // Housekeeping, run by the hourly cron.
+    // Housekeeping, run by the hourly cron. Audits of accounts without the
+    // plan are kept for 30 days.
     async cleanup(now, { keepAudits = 100 } = {}) {
       await db.batch([
+        db.prepare("DELETE FROM audits WHERE created_at < ? AND user_id IN (SELECT id FROM users WHERE plan != 'pro')").bind(now - FREE_AUDIT_DAYS * 86_400_000),
         db.prepare('DELETE FROM login_tokens WHERE expires_at < ?').bind(now - 86_400_000),
         db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
         db.prepare('DELETE FROM counters WHERE window_start < ?').bind(now - 2 * 86_400_000),
