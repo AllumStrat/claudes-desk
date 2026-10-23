@@ -1,0 +1,36 @@
+{
+  "client": "example-auto",
+  "business": "Example Auto",
+  "brand": "Example Auto",
+  "site": "example.com",
+  "page": {
+    "type": "location",
+    "service": "brake repair",
+    "place": "Norterra",
+    "words_target": 1100,
+    "notes": "Norterra is a neighborhood in north Phoenix near the I-17 and Happy Valley Road."
+  },
+  "facts": [
+    { "fact": "The shop is on Happy Valley Road, about four minutes from the I-17 interchange", "source": "owner intake form" },
+    { "fact": "Every brake visit starts with a free inspection", "source": "owner intake form" },
+    { "fact": "Most brake jobs are finished the same day", "source": "owner intake form" },
+    { "fact": "Works on cars, light trucks and SUVs", "source": "About page" }
+  ],
+  "voice_of_customer": [
+    "My brakes squeal every morning when I back out of the driveway",
+    "They showed me the rotor measurements before doing anything"
+  ],
+  "conversion": { "action": "Book a brake inspection", "url": "/contact/" },
+  "internal_pages": [
+    { "url": "/service/brakes/", "title": "Brake repair" },
+    { "url": "/deer-valley-auto-repair/", "title": "Deer Valley auto repair" },
+    { "url": "/service/alignment/", "title": "Wheel alignment" },
+    { "url": "/about/", "title": "About Example Auto" }
+  ],
+  "external_sources": [],
+  "keywords": { "primary": "brake repair norterra", "variants": [], "secondary": [], "baseline": [] },
+  "competitors": ["rivalshop.com"],
+  "retired_names": ["Example Brake & Muffler"],
+  "siblings": [{ "name": "Deer Valley page", "url": "https://example.com/deer-valley-auto-repair/" }],
+  "sitemap": true
+}

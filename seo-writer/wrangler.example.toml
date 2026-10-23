@@ -1,0 +1,12 @@
+# Copy to wrangler.toml to run locally (npx wrangler dev). Nothing is deployed.
+# Secrets, set with `npx wrangler secret put NAME` (never in this file):
+#   ANTHROPIC_API_KEY   the Claude API key the writer bills to
+#   WRITER_TOKEN        a long random string; callers send it as a Bearer token
+name = "allum-seo-writer"
+main = "src/worker/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Optional per-step effort override, as JSON:
+# WRITER_EFFORT = '{"draft":"high"}'
