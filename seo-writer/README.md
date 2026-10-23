@@ -28,6 +28,10 @@ It prints the check report, the status and what the page cost, and saves `out/[c
 
 `npm run check -- draft.md [--live] [sibling.md https://site/page/ ...]` runs the `check.py` port on its own, on any draft in the skill's format.
 
+## The web page
+
+`web/` is the writer as a page for allumstrategies.com or devbysalt.com: a brief form, the steps as they run and the copy doc. `cd web && npm install && npm run dev` opens it in demo mode (a canned model, no key, no spend). See `web/README.md`, including how to put it live. The Worker has two additions for it: `GET /api/status`, and `Accept: application/x-ndjson` on `/api/write` to stream one line per step.
+
 ## The brief
 
 `examples/brief.example.json` is a complete, fictional brief. The fields:

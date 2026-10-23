@@ -1,0 +1,981 @@
+---
+/**
+ * The SEO writer as one drop-in piece: the brief form on the left, the run
+ * and the copy doc on the right, inside the site's white window. It talks to
+ * the Worker (src/worker/index.js) at `endpoint`, which defaults to the same
+ * origin: GET /api/status before it shows anything, then
+ * POST /api/write with Accept: application/x-ndjson so each step shows as
+ * it happens.
+ *
+ * It reads only the site's own token names (--deep, --gold, --line, ...),
+ * so on allumstrategies.com it needs nothing but this file and the scripts
+ * beside it.
+ */
+import example from "../../../examples/brief.example.json";
+
+interface Props {
+  /** Where the Worker answers, without a trailing slash. Empty means this origin. */
+  endpoint?: string;
+}
+
+const { endpoint = import.meta.env.PUBLIC_WRITER_API ?? "" } = Astro.props;
+---
+
+<section class="writer" data-writer data-endpoint={endpoint} data-example={JSON.stringify(example)}>
+  <div class="window">
+    <div class="window-bar">
+      <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="window-title">New page brief</span>
+      <span class="status" data-status role="status">Checking the writer…</span>
+    </div>
+
+    <div class="split">
+      <form class="brief" data-form novalidate>
+        <fieldset>
+          <legend><span class="n">1</span> Client</legend>
+          <div class="grid2">
+            <label><span class="lab">Business name <span class="req">required</span></span>
+              <input name="business" required autocomplete="organization" placeholder="Example Auto" />
+            </label>
+            <label><span class="lab">Site <span class="req">required</span></span>
+              <input name="site" required inputmode="url" placeholder="example.com" />
+            </label>
+            <label>Client short name
+              <input name="client" placeholder="example-auto" />
+              <small>Names the copy doc. Made from the site when blank.</small>
+            </label>
+            <label>Brand on the page
+              <input name="brand" placeholder="Same as the business name" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend><span class="n">2</span> Page</legend>
+          <div class="seg" role="radiogroup" aria-label="Page type">
+            <label><input type="radio" name="page.type" value="service" checked /><span>Service</span></label>
+            <label><input type="radio" name="page.type" value="location" /><span>Location</span></label>
+            <label><input type="radio" name="page.type" value="blog" /><span>Blog post</span></label>
+          </div>
+          <div class="grid2">
+            <label><span class="lab">Service or topic <span class="req">required</span></span>
+              <input name="page.subject" required placeholder="brake repair" />
+            </label>
+            <label data-only="location"><span class="lab">Place <span class="req">required</span></span>
+              <input name="page.place" placeholder="Norterra" />
+            </label>
+            <label>Primary keyword
+              <input name="page.primary" placeholder="brake repair norterra" />
+              <small>Blank lets the writer suggest one.</small>
+            </label>
+            <label>Word target
+              <input name="page.words_target" type="number" min="300" max="5000" step="50" placeholder="1100" />
+            </label>
+            <label>Slug
+              <input name="page.slug" placeholder="norterra-brake-repair" />
+            </label>
+          </div>
+          <label>Notes for the writer
+            <textarea name="page.notes" rows="2" placeholder="Norterra is a neighborhood in north Phoenix near the I-17 and Happy Valley Road."></textarea>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend><span class="n">3</span> Facts</legend>
+          <p class="hint">Only what the owner has confirmed. Anything else the page needs comes back as a [CONFIRM] question.</p>
+          <div class="facts" data-facts></div>
+          <template data-fact-template>
+            <div class="fact" data-fact>
+              <input name="fact" aria-label="Fact" placeholder="Every brake visit starts with a free inspection" />
+              <input name="fact_source" aria-label="Source" placeholder="Source" />
+              <button type="button" class="x" data-remove-fact aria-label="Remove this fact">×</button>
+            </div>
+          </template>
+          <button type="button" class="btn ghost small" data-add-fact>Add a fact</button>
+        </fieldset>
+
+        <fieldset>
+          <legend><span class="n">4</span> Customers and links</legend>
+          <label>What customers say
+            <textarea name="voice_of_customer" rows="3" placeholder="My brakes squeal every morning when I back out of the driveway"></textarea>
+            <small>Review lines and questions in their words, one per line.</small>
+          </label>
+          <div class="grid2">
+            <label>The one action
+              <input name="conversion.action" placeholder="Book a brake inspection" />
+            </label>
+            <label>Its page
+              <input name="conversion.url" placeholder="/contact/" />
+            </label>
+          </div>
+          <label>Pages the copy may link to
+            <textarea name="internal_pages" rows="4" placeholder={"/service/brakes/ | Brake repair\n/about/ | About Example Auto"}></textarea>
+            <small>One per line: path, then a bar and the page title.</small>
+          </label>
+          <label class="check"><input type="checkbox" name="sitemap" /> Also read the site's sitemap.xml for link targets</label>
+        </fieldset>
+
+        <details class="more">
+          <summary><span class="n">5</span> Sources, keywords and guardrails</summary>
+          <label>Sources you already trust
+            <textarea name="external_sources" rows="2" placeholder="https://www.nhtsa.gov/equipment/brakes | Brakes are one of the most important safety features"></textarea>
+            <small>One per line: URL, then a bar and a line quoted from the page. Each is still checked.</small>
+          </label>
+          <div class="grid2">
+            <label>Keyword variants
+              <textarea name="keywords.variants" rows="2" placeholder="brake service norterra"></textarea>
+            </label>
+            <label>Secondary keywords
+              <textarea name="keywords.secondary" rows="2" placeholder="squealing brakes"></textarea>
+            </label>
+            <label>Competitors
+              <textarea name="competitors" rows="2" placeholder="rivalshop.com"></textarea>
+              <small>Never linked or used as a source.</small>
+            </label>
+            <label>Retired names
+              <textarea name="retired_names" rows="2" placeholder="Example Brake & Muffler"></textarea>
+              <small>Old names the page must not use.</small>
+            </label>
+          </div>
+          <label>Existing pages to check overlap against
+            <textarea name="siblings" rows="2" placeholder="https://example.com/deer-valley-auto-repair/"></textarea>
+          </label>
+        </details>
+
+        <details class="more" data-json-panel>
+          <summary><span class="n">{"{}"}</span> Brief as JSON</summary>
+          <p class="hint">Paste a brief to fill the form, or copy this one into the CLI.</p>
+          <textarea class="code" data-json rows="12" spellcheck="false" aria-label="Brief JSON"></textarea>
+          <div class="row">
+            <button type="button" class="btn ghost small" data-json-apply>Fill the form from this</button>
+            <button type="button" class="btn ghost small" data-json-download>Download brief.json</button>
+            <span class="note" data-json-note role="status"></span>
+          </div>
+        </details>
+
+        <div class="run">
+          <label data-token-field hidden>Writer token
+            <input name="token" type="password" autocomplete="off" spellcheck="false" />
+            <small>Kept in this tab only.</small>
+          </label>
+          <label class="check"><input type="checkbox" name="live" /> Check that every link in the copy loads</label>
+          <div class="row">
+            <button type="submit" class="btn gold" data-submit>Write the page</button>
+            <button type="button" class="btn ghost" data-example-load>Load the example</button>
+            <button type="button" class="btn ghost" data-clear>Clear</button>
+          </div>
+          <p class="error" data-form-error role="alert" hidden></p>
+        </div>
+      </form>
+
+      <div class="out" data-out>
+        <div class="desk" data-idle>
+          <p class="desk-h">The copy doc lands here.</p>
+          <p>A page takes a few minutes: plan, sources, draft, edit, then check.py and fixes until it passes.</p>
+        </div>
+
+        <div class="progress" data-progress hidden>
+          <div class="progress-head">
+            <p class="progress-h" data-progress-h>Writing</p>
+            <span class="clock" data-clock>0:00</span>
+          </div>
+          <ol class="steps" data-steps></ol>
+          <button type="button" class="btn ghost small" data-cancel>Stop the run</button>
+        </div>
+
+        <div class="result" data-result hidden>
+          <div class="verdict" data-verdict></div>
+          <dl class="meta" data-meta></dl>
+          <div class="confirms" data-confirms hidden>
+            <p class="sub-h">Questions for the owner</p>
+            <ul data-confirm-list></ul>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Result">
+            <button type="button" role="tab" aria-selected="true" data-tab="preview">Page</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="doc">Copy doc</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="report">Check report</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="usage">Cost</button>
+          </div>
+          <div class="pane" data-pane="preview">
+            <div class="serp" data-serp></div>
+            <article class="copy" data-copy></article>
+          </div>
+          <div class="pane" data-pane="doc" hidden><pre class="code" data-doc></pre></div>
+          <div class="pane" data-pane="report" hidden><table class="report" data-report></table></div>
+          <div class="pane" data-pane="usage" hidden><table class="usage" data-usage></table></div>
+          <div class="row">
+            <button type="button" class="btn solid small" data-copy-doc>Copy the copy doc</button>
+            <button type="button" class="btn ghost small" data-download-doc>Download .md</button>
+            <span class="note" data-doc-note role="status"></span>
+          </div>
+        </div>
+
+        <div class="failed" data-failed hidden role="alert"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { mountWriter } from "../scripts/seo-writer.js";
+  document.querySelectorAll<HTMLElement>("[data-writer]").forEach(mountWriter);
+</script>
+
+<style>
+  .writer [hidden] {
+    display: none !important;
+  }
+  .writer {
+    --win-shadow: 0 30px 60px -30px oklch(0.196 0.04 172.6 / 0.45), 0 2px 6px oklch(0.196 0.04 172.6 / 0.08);
+  }
+  .window {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    box-shadow: var(--win-shadow);
+    overflow: clip;
+  }
+  .window-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--wash);
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+  .lights {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .lights i {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--line);
+  }
+  .window-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+  .status {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+  }
+  .status::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--faint);
+  }
+  .status[data-tone="ready"]::before {
+    background: var(--pass);
+  }
+  .status[data-tone="demo"] {
+    background: var(--gold-wash);
+    border-color: var(--gold-line);
+    color: var(--gold-ink);
+  }
+  .status[data-tone="demo"]::before {
+    background: var(--gold);
+  }
+  .status[data-tone="down"]::before {
+    background: var(--fail);
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+  @media (max-width: 62rem) {
+    .split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* ----- The brief ----- */
+  .brief {
+    padding: clamp(1rem, 3vw, 2rem);
+    border-right: 1px solid var(--line-soft);
+    display: grid;
+    gap: 1.75rem;
+    align-content: start;
+  }
+  @media (max-width: 62rem) {
+    .brief {
+      border-right: 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+  }
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+  legend,
+  .more > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0;
+    margin-bottom: 0.9rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.125rem;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .n {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.6rem;
+    height: 1.6rem;
+    padding-inline: 0.3rem;
+    border-radius: var(--r-chip);
+    background: var(--deep);
+    color: var(--on-deep);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+  @media (max-width: 36rem) {
+    .grid2 {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  label {
+    display: grid;
+    gap: 0.35rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: -0.012em;
+    color: var(--ink-2);
+    min-width: 0;
+  }
+  .grid2 {
+    align-items: start;
+  }
+  .req {
+    margin-left: 0.3rem;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  small,
+  .hint {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--muted);
+    letter-spacing: 0;
+    margin: 0;
+  }
+  .hint {
+    margin-top: -0.4rem;
+  }
+  input:not([type="radio"], [type="checkbox"]),
+  textarea {
+    width: 100%;
+    font: inherit;
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.9375rem;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r-ctl);
+    padding: 0.6rem 0.75rem;
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  }
+  textarea {
+    resize: vertical;
+    line-height: 1.45;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: color-mix(in oklab, var(--faint) 70%, var(--panel));
+  }
+  input:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--deep);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--deep) 14%, transparent);
+  }
+  [aria-invalid="true"] {
+    border-color: var(--fail) !important;
+  }
+  .code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-family: var(--font-body);
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  .check input {
+    width: 1.05rem;
+    height: 1.05rem;
+    accent-color: var(--deep);
+  }
+
+  .seg {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0.25rem;
+    border-radius: calc(var(--r-ctl) + 0.25rem);
+    background: var(--wash);
+    border: 1px solid var(--line-soft);
+  }
+  .seg label {
+    display: block;
+  }
+  .seg input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .seg span {
+    display: block;
+    padding: 0.5rem 0.95rem;
+    border-radius: var(--r-ctl);
+    cursor: pointer;
+    color: var(--muted);
+    transition: background-color 0.15s var(--ease), color 0.15s var(--ease);
+  }
+  .seg input:checked + span {
+    background: var(--deep);
+    color: var(--on-deep);
+  }
+  .seg input:focus-visible + span {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .brief:not(:has([value="location"]:checked)) [data-only="location"] {
+    display: none;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .fact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) 2.25rem;
+    gap: 0.5rem;
+  }
+  .x {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: var(--r-ctl);
+    color: var(--muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+  .x:hover {
+    background: var(--wash);
+    color: var(--ink);
+  }
+
+  .more {
+    border-top: 1px solid var(--line-soft);
+    padding-top: 1.25rem;
+    display: grid;
+    gap: 0.9rem;
+  }
+  .more > summary {
+    cursor: pointer;
+    list-style: none;
+    margin-bottom: 0;
+  }
+  .more > summary::-webkit-details-marker {
+    display: none;
+  }
+  .more > summary::after {
+    content: "+";
+    margin-left: auto;
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 1.3rem;
+  }
+  .more[open] > summary::after {
+    content: "−";
+  }
+  .more[open] > summary {
+    margin-bottom: 0.4rem;
+  }
+
+  .run {
+    display: grid;
+    gap: 0.9rem;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 1.5rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .note {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .error {
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--r-ctl);
+    background: var(--fail-wash);
+    color: var(--fail);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--r-ctl);
+    padding: 0.75rem 1.05rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: -0.012em;
+    cursor: pointer;
+    transition: background-color 0.15s var(--ease), transform 0.15s var(--ease);
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn.small {
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8125rem;
+  }
+  .gold {
+    background: var(--gold);
+    color: var(--gold-ink);
+    padding: 0.95rem 1.4rem;
+  }
+  .gold:hover:not([disabled]) {
+    background: var(--gold-hi);
+  }
+  .solid {
+    background: var(--deep);
+    color: var(--on-deep);
+  }
+  .solid:hover {
+    background: var(--deep-2);
+  }
+  .ghost {
+    background: var(--panel);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  .ghost:hover {
+    background: var(--wash);
+  }
+
+  /* ----- The output ----- */
+  .out {
+    padding: clamp(1rem, 3vw, 2rem);
+    min-width: 0;
+    background: var(--wash);
+  }
+  .out > * {
+    position: sticky;
+    top: 1.5rem;
+  }
+  .desk {
+    min-height: 22rem;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    text-align: center;
+    padding: 2rem;
+    border: 1px dashed var(--line);
+    border-radius: var(--r-card);
+    background-color: var(--panel);
+    background-image: radial-gradient(var(--line) 1px, transparent 1px);
+    background-size: 14px 14px;
+    color: var(--muted);
+  }
+  .desk p {
+    max-width: 26rem;
+    margin: 0.25rem 0;
+    background: var(--panel);
+  }
+  .desk-h {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .progress,
+  .result,
+  .failed {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    padding: clamp(1rem, 2.5vw, 1.5rem);
+  }
+  .progress {
+    display: grid;
+    gap: 1rem;
+    justify-items: start;
+  }
+  .progress-head {
+    display: flex;
+    width: 100%;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .progress-h,
+  .sub-h {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.125rem;
+    letter-spacing: -0.02em;
+  }
+  .clock {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    display: grid;
+    gap: 0.25rem;
+  }
+  .steps :global(li) {
+    display: grid;
+    grid-template-columns: 1.5rem 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+    border-radius: var(--r-ctl);
+    color: var(--muted);
+  }
+  .steps :global(li[data-state="now"]) {
+    background: var(--wash);
+    color: var(--ink);
+  }
+  .steps :global(li[data-state="done"]) {
+    color: var(--ink-2);
+  }
+  .steps :global(.dot) {
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+  }
+  .steps :global(li[data-state="now"] .dot) {
+    border-color: var(--deep);
+    border-right-color: transparent;
+    animation: spin 0.9s linear infinite;
+  }
+  .steps :global(li[data-state="done"] .dot) {
+    border-color: var(--pass);
+    background: var(--pass)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5 7 11l5-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 0.8rem no-repeat;
+  }
+  .steps :global(.t) {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .steps :global(.what) {
+    display: grid;
+  }
+  .steps :global(.what b) {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.012em;
+  }
+  .steps :global(.what span) {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  @keyframes spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .steps :global(li[data-state="now"] .dot) {
+      animation: none;
+      border-right-color: var(--deep);
+      background: var(--wash);
+    }
+  }
+
+  .result {
+    display: grid;
+    gap: 1.1rem;
+  }
+  .verdict :global(.badge) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--r-pill);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+  .verdict :global(.badge.green) {
+    background: var(--pass-wash);
+    color: var(--pass);
+  }
+  .verdict :global(.badge.red) {
+    background: var(--fail-wash);
+    color: var(--fail);
+  }
+  .verdict :global(.badge.wait) {
+    background: var(--gold-wash);
+    color: var(--gold-ink);
+  }
+  .verdict :global(.badge.demo) {
+    background: var(--wash);
+    color: var(--ink-2);
+    margin-left: 0.4rem;
+  }
+  .verdict :global(h3) {
+    margin: 0.6rem 0 0.2rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.375rem;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+  }
+  .verdict :global(p) {
+    margin: 0;
+    color: var(--muted);
+  }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+  }
+  @media (max-width: 30rem) {
+    .meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .meta :global(div) {
+    padding: 0.6rem 0.7rem;
+    border-radius: var(--r-ctl);
+    background: var(--wash);
+  }
+  .meta :global(dt) {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .meta :global(dd) {
+    margin: 0.1rem 0 0;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .confirms {
+    padding: 0.8rem 1rem;
+    border-radius: var(--r-ctl);
+    background: var(--gold-wash);
+    border: 1px solid var(--gold-line);
+    color: var(--gold-ink);
+  }
+  .confirms .sub-h {
+    font-size: 0.9375rem;
+  }
+  .confirms ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+  .tabs button {
+    border: 0;
+    background: none;
+    padding: 0.6rem 0.8rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+  }
+  .tabs button[aria-selected="true"] {
+    color: var(--ink);
+    border-bottom-color: var(--gold);
+  }
+  .pane {
+    max-height: 34rem;
+    overflow: auto;
+    min-width: 0;
+  }
+  pre.code {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 1rem;
+    border-radius: var(--r-ctl);
+    background: var(--wash);
+    color: var(--ink-2);
+  }
+  .serp {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-ctl);
+    margin-bottom: 1rem;
+  }
+  .serp :global(.u) {
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+  }
+  .serp :global(.h) {
+    margin: 0.15rem 0;
+    font-size: 1.15rem;
+    color: oklch(0.42 0.17 264);
+    font-family: Arial, sans-serif;
+  }
+  .serp :global(.d) {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
+  }
+  .copy {
+    line-height: 1.65;
+    color: var(--ink-2);
+  }
+  .copy :global(h1),
+  .copy :global(h2),
+  .copy :global(h3) {
+    font-family: var(--font-display);
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+  }
+  .copy :global(h1) {
+    font-size: 1.75rem;
+    margin: 0 0 0.75rem;
+  }
+  .copy :global(h2) {
+    font-size: 1.3rem;
+    margin: 1.75rem 0 0.5rem;
+  }
+  .copy :global(h3) {
+    font-size: 1.05rem;
+    margin: 1.25rem 0 0.25rem;
+  }
+  .copy :global(p) {
+    margin: 0 0 0.85rem;
+  }
+  .copy :global(a) {
+    color: var(--deep);
+    text-decoration-color: var(--gold);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+  .copy :global(mark.confirm) {
+    background: var(--gold-wash);
+    color: var(--gold-ink);
+    border-radius: 3px;
+    padding: 0 0.2rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+  table :global(td),
+  table :global(th) {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  table :global(th) {
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .report :global(.lv) {
+    font-family: ui-monospace, Menlo, monospace;
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+  .report :global(.PASS) {
+    color: var(--pass);
+  }
+  .report :global(.FAIL) {
+    color: var(--fail);
+  }
+  .report :global(.WARN) {
+    color: var(--gold-ink);
+  }
+  .report :global(.INFO) {
+    color: var(--muted);
+  }
+  .usage :global(td:not(:first-child)),
+  .usage :global(th:not(:first-child)) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .failed {
+    border-color: color-mix(in oklab, var(--fail) 35%, var(--line));
+    background: var(--fail-wash);
+    color: var(--ink);
+  }
+  .failed :global(h3) {
+    margin: 0 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    color: var(--fail);
+  }
+  .failed :global(p) {
+    margin: 0.3rem 0 0;
+  }
+</style>

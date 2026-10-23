@@ -1,0 +1,250 @@
+---
+/**
+ * A stand-in for allumstrategies.com's Layout.astro: the same tokens, fonts,
+ * header pill and footer, cut down to what this one page needs. It exists so
+ * the writer can be previewed as a page on the site. When the page moves into
+ * the real site, drop this file and wrap SeoWriter.astro in the site's own
+ * Layout; the component only reads the token names defined here, which are
+ * the site's names.
+ */
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const SITE = "https://allumstrategies.com";
+
+const nav = [
+  { href: `${SITE}/services/`, label: "What we do" },
+  { href: `${SITE}/industries/mechanics/`, label: "Who we help" },
+  { href: `${SITE}/tools/`, label: "Free tools" },
+  { href: `${SITE}/blog/`, label: "Learn" },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {/* An internal tool: it bills an API key, so it stays out of search. */}
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/archivo-latin-variable.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-sans-latin-variable.woff2" crossorigin />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="bar">
+        <a class="logo" href={SITE + "/"}>ALLUM<span class="logo-dot" aria-hidden="true">_</span></a>
+        <nav class="main-nav" aria-label="Primary">
+          <ul>
+            {nav.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+          </ul>
+        </nav>
+        <a class="hbtn" href="tel:+14805257119">480-525-7119</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a class="logo" href={SITE + "/"}>ALLUM<span class="logo-dot" aria-hidden="true">_</span></a>
+        <p>Make AI recommend you. Phoenix-based, serving businesses everywhere.</p>
+        <p class="footer-base">© 2026 Allum Strategies. Internal tool, not linked from the site.</p>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  @font-face {
+    font-family: "Archivo";
+    src: url("/fonts/archivo-latin-variable.woff2") format("woff2");
+    font-weight: 100 900;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "IBM Plex Sans";
+    src: url("/fonts/ibm-plex-sans-latin-variable.woff2") format("woff2");
+    font-weight: 100 700;
+    font-display: swap;
+  }
+
+  /* The site's tokens, by the site's names (AllumWebsite Layout.astro). */
+  :root {
+    --font-display: "Archivo", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --ink: oklch(0.19 0.022 172.6);
+    --ink-2: oklch(0.34 0.024 172.6);
+    --muted: oklch(0.47 0.021 172.6);
+    --faint: oklch(0.545 0.018 172.6);
+    --line: oklch(0.9 0.011 172.6);
+    --line-soft: oklch(0.948 0.008 172.6);
+    --bg: oklch(0.995 0.002 172.6);
+    --panel: oklch(1 0 0);
+    --wash: oklch(0.973 0.009 172.6);
+    --deep: oklch(0.238 0.047 172.6);
+    --deep-2: oklch(0.196 0.04 172.6);
+    --on-deep: oklch(0.972 0.012 172.6);
+    --on-deep-mut: oklch(0.79 0.024 172.6);
+    --on-deep-line: oklch(0.42 0.04 172.6);
+    --gold: oklch(0.84 0.13 78);
+    --gold-hi: oklch(0.89 0.11 82);
+    --gold-ink: oklch(0.31 0.062 78);
+    --gold-wash: oklch(0.968 0.035 88);
+    --gold-line: oklch(0.885 0.072 82);
+    --pass: oklch(0.5 0.115 162);
+    --pass-wash: oklch(0.958 0.032 165);
+    --fail: oklch(0.52 0.16 28);
+    --fail-wash: oklch(0.965 0.025 28);
+    --r-panel: 2.5rem;
+    --r-card: 1rem;
+    --r-ctl: 0.5rem;
+    --r-chip: 0.375rem;
+    --r-pill: 100px;
+    --shell: 75rem;
+    --ease: cubic-bezier(0.25, 1, 0.5, 1);
+    color-scheme: light;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--gold-wash);
+  }
+  a {
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: -999px;
+    top: 0;
+    background: var(--deep);
+    color: var(--on-deep);
+    padding: 0.5rem 1rem;
+    z-index: 50;
+  }
+  .skip-link:focus {
+    left: 0;
+  }
+
+  .site-header {
+    position: absolute;
+    inset: 1rem 1rem auto;
+    z-index: 10;
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+    padding: 0.375rem 0.375rem 0.375rem 1.15rem;
+    background: var(--deep);
+    border-radius: 1.375rem;
+    box-shadow: 0 10px 30px -12px oklch(0.196 0.04 172.6 / 0.6);
+  }
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+    color: var(--on-deep);
+    text-decoration: none;
+  }
+  .logo-dot {
+    color: var(--gold);
+  }
+  .main-nav ul {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .main-nav a {
+    display: block;
+    padding: 0.55rem 0.8rem;
+    border-radius: var(--r-ctl);
+    color: var(--on-deep);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: -0.012em;
+    text-decoration: none;
+  }
+  .main-nav a:hover {
+    background: color-mix(in oklab, var(--on-deep) 8%, transparent);
+  }
+  .hbtn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 1.05rem;
+    border-radius: 1rem;
+    background: var(--panel);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+  @media (max-width: 52rem) {
+    .main-nav {
+      display: none;
+    }
+    .bar {
+      width: 100%;
+      justify-content: space-between;
+    }
+  }
+
+  .site-footer {
+    background: var(--deep-2);
+    color: var(--on-deep-mut);
+    padding: 3.5rem 1rem 2.5rem;
+    margin-top: 6rem;
+  }
+  .footer-inner {
+    max-width: var(--shell);
+    margin-inline: auto;
+  }
+  .footer-inner p {
+    margin: 0.75rem 0 0;
+  }
+  .footer-base {
+    border-top: 1px solid var(--on-deep-line);
+    padding-top: 1.25rem;
+    margin-top: 2rem !important;
+    font-size: 0.8125rem;
+  }
+</style>

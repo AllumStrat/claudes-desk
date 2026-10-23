@@ -1,0 +1,15 @@
+{
+  "name": "allum-seo-writer-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "WRITER_DEMO=1 astro dev",
+    "dev:real": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "7.0.2"
+  }
+}

@@ -1,0 +1,175 @@
+---
+import Shell from "../../layouts/Shell.astro";
+import SeoWriter from "../../components/SeoWriter.astro";
+
+const steps = [
+  ["Plan", "The search, the intent, the keywords, the facts it may use, the questions for the owner and an outline with word budgets."],
+  ["Sources", "Every outside source is fetched. It stays only if the page loads and holds the quoted line word for word."],
+  ["Draft and edit", "Claude writes the page, then edits every line against the anti-AI writing rules."],
+  ["Check", "check.py runs on the draft. Each FAIL goes back to Claude until the report is green or three rounds have passed."],
+];
+---
+
+<Shell title="SEO writer | Allum Strategies" description="Write one SEO page for a client from a brief. Internal tool.">
+  <section class="hero">
+    <div class="hero-in">
+      <p class="trail"><a href="https://allumstrategies.com/tools/">Tools</a><span aria-hidden="true">/</span>SEO writer</p>
+      <h1>Write one page from one brief.</h1>
+      <p class="lede">
+        Fill in what you know about the client and the page. The writer plans it, checks its sources, drafts it, edits it and runs
+        check.py until it passes. You get the copy doc, ready for the client.
+      </p>
+      <ul class="facts">
+        <li>Internal tool</li>
+        <li>About $0.30 a page on Sonnet 5.5</li>
+        <li>Stops at $1 a page</li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="dock">
+    <SeoWriter />
+  </div>
+
+  <section class="how">
+    <h2>What happens when you press write</h2>
+    <ol>
+      {
+        steps.map(([h, b], i) => (
+          <li>
+            <span class="i">{i + 1}</span>
+            <h3>{h}</h3>
+            <p>{b}</p>
+          </li>
+        ))
+      }
+    </ol>
+    <p class="rule">
+      Facts come only from the brief. A price, a warranty or a year the brief does not give comes back as a [CONFIRM] question for the
+      owner. Links go only to the pages you list and the sources the writer checked.
+    </p>
+  </section>
+</Shell>
+
+<style>
+  .hero {
+    background: radial-gradient(60rem 30rem at 85% -10%, oklch(0.5 0.115 162 / 0.28), transparent 60%), var(--deep-2);
+    color: var(--on-deep);
+    padding: 8.5rem 1rem 11rem;
+  }
+  .hero-in {
+    max-width: var(--shell);
+    margin-inline: auto;
+  }
+  .trail {
+    margin: 0 0 1.25rem;
+    font-size: 0.8125rem;
+    color: var(--on-deep-mut);
+    display: flex;
+    gap: 0.5rem;
+  }
+  .trail a {
+    color: var(--on-deep-mut);
+  }
+  h1 {
+    margin: 0;
+    max-width: 14ch;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(2.6rem, 6.4vw, 4.75rem);
+    line-height: 1.02;
+    letter-spacing: -0.038em;
+  }
+  .lede {
+    max-width: 38rem;
+    margin: 1.25rem 0 0;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--on-deep-mut);
+  }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .facts li {
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--on-deep-line);
+    font-size: 0.8125rem;
+    color: var(--on-deep);
+  }
+  .dock {
+    max-width: var(--shell);
+    margin: -8rem auto 0;
+    padding-inline: 1rem;
+    position: relative;
+  }
+  .how {
+    max-width: var(--shell);
+    margin: 6rem auto 0;
+    padding-inline: 1rem;
+  }
+  .how h2 {
+    margin: 0 0 2rem;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+    letter-spacing: -0.028em;
+    line-height: 1.1;
+    max-width: 20ch;
+  }
+  .how ol {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  @media (max-width: 62rem) {
+    .how ol {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 34rem) {
+    .how ol {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .how li {
+    padding: 1.25rem;
+    border-radius: var(--r-card);
+    background: var(--wash);
+  }
+  .i {
+    display: inline-grid;
+    place-items: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: var(--r-chip);
+    background: var(--deep);
+    color: var(--on-deep);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .how h3 {
+    margin: 0.9rem 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    letter-spacing: -0.02em;
+  }
+  .how p {
+    margin: 0;
+    color: var(--muted);
+  }
+  .rule {
+    max-width: 44rem;
+    margin-top: 2rem !important;
+    color: var(--ink-2) !important;
+  }
+</style>
