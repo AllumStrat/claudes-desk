@@ -182,7 +182,7 @@ export function createApp(deps) {
     const token = randomToken();
     await store.saveLoginToken(await sha256Hex(token), email, now(), config.loginMinutes * MIN);
     // The token goes after #, so it is never sent to a server or written to logs.
-    const link = `${config.appOrigin}/#signin=${token}`;
+    const link = `${config.pageUrl}#signin=${token}`;
     try {
       await mailer.send({ to: email, ...signInEmail({ appName: config.appName, link, minutes: config.loginMinutes }) });
     } catch (err) {
@@ -391,8 +391,8 @@ export function createApp(deps) {
         customer: fresh.stripe_customer_id,
         price: config.billing.priceId,
         userId: user.id,
-        successUrl: `${config.appOrigin}/?paid=1`,
-        cancelUrl: `${config.appOrigin}/`,
+        successUrl: `${config.pageUrl}?paid=1`,
+        cancelUrl: config.pageUrl,
         expiresAt: Math.floor(expiresAt / 1000),
         idempotencyKey: `checkout-${user.id}-${t}`,
       });
@@ -412,7 +412,7 @@ export function createApp(deps) {
     const limited = await billingLimit(user);
     if (limited) return limited;
     if (!user.stripe_customer_id) return json(404, { error: 'There is no billing account yet.' });
-    const session = await deps.stripe.createPortalSession({ customer: user.stripe_customer_id, returnUrl: `${config.appOrigin}/` });
+    const session = await deps.stripe.createPortalSession({ customer: user.stripe_customer_id, returnUrl: config.pageUrl });
     if (!isStripeUrl(session.url)) throw new Error('unexpected portal url');
     return json(200, { url: session.url });
   }
@@ -459,7 +459,21 @@ export function createApp(deps) {
 
   // --- entry points -------------------------------------------------------
 
-  async function fetch(request, { ip = '' } = {}) {
+  // The page can live on another origin than the API (a marketing site
+  // calling api.example.com). Those origins are listed in allowedOrigins;
+  // they get CORS headers with credentials, and nobody else does.
+  async function fetch(request, ctx = {}) {
+    const origin = request.headers.get('origin') || '';
+    const allowed = config.allowedOrigins.has(origin);
+    if (request.method === 'OPTIONS') {
+      if (!allowed) return json(403, { error: 'Requests from other sites are not allowed.' });
+      return withCors(new Response(null, { status: 204, headers: { 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '600' } }), origin);
+    }
+    const response = await route(request, ctx);
+    return allowed ? withCors(response, origin) : response;
+  }
+
+  async function route(request, { ip = '' } = {}) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -530,7 +544,7 @@ export function createApp(deps) {
         const report = await runAudit(url, { ...deps.auditDeps(), checkFinalHost: finalHostCheck(new URL(url).hostname) });
         await store.saveAudit({ userId: user.id, url, kind: 'weekly', report, now: now() });
         const diff = diffReports(before?.report, report);
-        if (hasChanges(diff)) await mailer.send({ to: user.email, ...watchEmail({ appName: config.appName, appOrigin: config.appOrigin, url, diff }) });
+        if (hasChanges(diff)) await mailer.send({ to: user.email, ...watchEmail({ appName: config.appName, pageUrl: config.pageUrl, url, diff }) });
         return 'checked';
       } catch (err) {
         log('weekly check failed', err?.message);
@@ -543,6 +557,13 @@ export function createApp(deps) {
   }
 
   return { fetch, scheduled, store };
+}
+
+function withCors(response, origin) {
+  response.headers.set('access-control-allow-origin', origin);
+  response.headers.set('access-control-allow-credentials', 'true');
+  response.headers.append('vary', 'Origin');
+  return response;
 }
 
 function isStripeUrl(u) {

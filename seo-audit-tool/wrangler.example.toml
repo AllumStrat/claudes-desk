@@ -41,6 +41,10 @@ crons = ["17 * * * *"]
 
 [vars]
 APP_ORIGIN = "https://audit.allumstrategies.com"
+# When the page lives on the marketing site instead (web/), point these at it
+# and serve this Worker on its own subdomain, e.g. audit-api.allumstrategies.com:
+# APP_ORIGIN = "https://allumstrategies.com"
+# APP_PAGE = "/tools/seo-audit/"
 EMAIL_PROVIDER = "cloudflare"
 EMAIL_FROM = "Allum SEO Audit <audit@allumstrategies.com>"
 JEV_PROVIDER = "workers-ai"

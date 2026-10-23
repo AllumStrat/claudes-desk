@@ -44,7 +44,7 @@ Tests: `test/safe-fetch.test.js` (cap, endless body, timeout, redirect loop), `t
 - Checkout and portal requests are limited to 5 per account per 10 minutes, since each one calls Stripe.
 - On the local server, `TRUST_PROXY=1` takes the visitor address from the last X-Forwarded-For entry (the one your own proxy added), never the first, which the client controls.
 - Off switches: `AUDITS_ENABLED=0` pauses audits, `SIGNUPS_ENABLED=0` stops new accounts.
-- Cross-site requests are refused: every POST must carry this site's own Origin header (except the Stripe webhook, which is checked by signature). Requests must be JSON, under 4 KB, with only the expected fields, so callers cannot change limits.
+- Cross-site requests are refused: every POST must carry this site's own Origin header (except the Stripe webhook, which is checked by signature). When the page lives on another host than the API (`web/`, a marketing site), only `APP_ORIGIN` and `ALLOWED_ORIGINS` get CORS headers with credentials; any other origin gets none, so it cannot read answers even when the browser sends the cookie. Preflights from other origins get a 403. Requests must be JSON, under 4 KB, with only the expected fields, so callers cannot change limits.
 - The crawl obeys robots.txt (the rules for its own user agent, or the `*` rules when there are none) and skips nofollow links.
 - A clear user agent: `AllumSEOAudit/0.1 (+https://allumstrategies.com; site audit on request)`.
 

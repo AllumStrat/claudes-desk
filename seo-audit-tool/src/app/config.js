@@ -15,6 +15,11 @@ export function isTurnstileTestSecret(secret) {
 export function readConfig(env = {}, defaults = {}) {
   const appOrigin = String(env.APP_ORIGIN || defaults.appOrigin || '').replace(/\/+$/, '');
   if (!/^https?:\/\/[^/]+$/.test(appOrigin)) throw new Error('APP_ORIGIN must be set, like https://audit.example.com');
+  // The path of the page the tool sits on, when that is not the site's home
+  // page (say /tools/seo-audit/ on a marketing site). Emailed links and
+  // Stripe's return links go there.
+  const appPage = String(env.APP_PAGE || '/');
+  if (!/^\/([A-Za-z0-9._~-]+\/)*([A-Za-z0-9._~-]+)?$/.test(appPage) || /\/\.\.?(\/|$)/.test(appPage)) throw new Error('APP_PAGE must be a path like /tools/seo-audit/');
   const hashSalt = env.HASH_SALT || defaults.hashSalt || '';
   if (!hashSalt && appOrigin.startsWith('https:')) throw new Error('HASH_SALT must be set on a public deploy');
   const secureCookie = on(env.COOKIE_SECURE, defaults.secureCookie ?? appOrigin.startsWith('https:'));
@@ -49,6 +54,7 @@ export function readConfig(env = {}, defaults = {}) {
   return {
     appName: env.APP_NAME || 'Allum SEO Audit',
     appOrigin,
+    pageUrl: appOrigin + appPage,
     allowedOrigins: new Set([appOrigin, ...String(env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean), ...(defaults.extraOrigins || [])]),
     cookieName: secureCookie ? '__Host-sid' : 'sid',
     secureCookie,

@@ -61,7 +61,7 @@ export function signInEmail({ appName, link, minutes }) {
   };
 }
 
-export function watchEmail({ appName, appOrigin, url, diff }) {
+export function watchEmail({ appName, pageUrl, url, diff }) {
   const lines = [`Your weekly ${appName} check of ${url} is done.`, ''];
   if (diff.scoreBefore === null) {
     lines.push(`First check saved. Score: ${diff.scoreAfter}/100. You will hear from us when something changes.`);
@@ -77,6 +77,6 @@ export function watchEmail({ appName, appOrigin, url, diff }) {
     lines.push('', `Fixed since last time (${diff.fixedIssues.length}):`);
     for (const i of diff.fixedIssues.slice(0, 10)) lines.push(`- ${i.issue}`);
   }
-  lines.push('', `See the full report: ${appOrigin}/`, '', 'To stop these emails, remove the saved site from your account.');
+  lines.push('', `See the full report: ${pageUrl}`, '', 'To stop these emails, remove the saved site from your account.');
   return { subject: `Weekly SEO check: ${url}`, text: lines.join('\n') };
 }

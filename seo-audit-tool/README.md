@@ -13,6 +13,10 @@ This is still the test version. It runs on your Mac. Nothing here is deployed, n
 
 The checks are plain JavaScript with Cheerio, so it needs no AI to work. Jev (TypeSafe AI's decision model) is an optional extra layer for judgment calls that rules cannot make, like whether the content is thin or generic. It is off until you turn it on. Haiku is not used.
 
+## The web page
+
+`web/` is the tool's page as an Astro project, inside a stand-in for allumstrategies.com, ready to move onto a live site. `cd web && npm install && npm run dev` starts it and the API together. See [web/README.md](web/README.md).
+
 ## Run it
 
 Needs Node 22.13 or newer (it uses Node's built-in SQLite for the local database).
@@ -131,7 +135,8 @@ All settings are environment variables. On a Worker, the ones marked secret go i
 | --- | --- | --- |
 | `PORT`, `HOST` | 8787, 127.0.0.1 | Local server address. Leave `HOST` unless you know why |
 | `APP_ORIGIN` | the local address | The site's own address. Sign-in links and Stripe return links use it, and POSTs from any other origin are refused |
-| `ALLOWED_ORIGINS` | none | Extra origins allowed to POST, comma separated |
+| `APP_PAGE` | `/` | Path of the page the tool sits on, like `/tools/seo-audit/`. Sign-in links, Stripe return links and weekly emails go to `APP_ORIGIN` plus this |
+| `ALLOWED_ORIGINS` | none | Extra origins allowed to POST, comma separated. `APP_ORIGIN` and these also get CORS headers with credentials, so a page on one of them can call the API on another host |
 | `HASH_SALT` (secret) | required on https | Salt for hashing IPs and emails before they are stored |
 | `DB_FILE` | `.data/local.db` | Local database file; `:memory:` keeps nothing |
 | `EMAIL_PROVIDER` | `log` locally, `cloudflare` on the Worker | `log` prints emails to the terminal, `cloudflare` uses Cloudflare Email Service, `resend` uses Resend |
