@@ -1,0 +1,31 @@
+:root { color-scheme: light dark; --muted: #666; --line: #ccc8; --high: #b42318; --medium: #b54708; --low: #475467; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+.muted { color: var(--muted); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+input { flex: 1 1 260px; padding: 10px; font: inherit; }
+button { padding: 10px 16px; font: inherit; cursor: pointer; }
+.score { font-size: 2.5rem; font-weight: 700; margin: 8px 0 0; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.issue { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 10px 0; }
+.issue h4 { margin: 0 0 6px; }
+.issue dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+.issue dt { font-weight: 600; }
+.issue dd { margin: 0; overflow-wrap: anywhere; }
+.p-high { border-left: 4px solid var(--high); }
+.p-medium { border-left: 4px solid var(--medium); }
+.p-low { border-left: 4px solid var(--low); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+ul.passed { columns: 2 260px; }
+.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+.spacer { flex: 1; }
+.panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+.panel h2 { margin-top: 0; font-size: 1.2rem; }
+.human { margin-top: 8px; }
+.locked { color: var(--muted); font-style: italic; }
+.upsell { border: 1px dashed var(--medium); border-radius: 8px; padding: 12px 14px; margin: 16px 0; }
+#history-list { padding-left: 18px; }
+#history-list button { padding: 2px 6px; margin-left: 6px; }
+footer { margin-top: 48px; }
+button.link { background: none; border: 0; padding: 0; text-decoration: underline; color: var(--muted); }
