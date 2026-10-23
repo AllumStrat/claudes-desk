@@ -3,6 +3,7 @@
 // never links a made-up URL or a claim the page does not make.
 
 import { domain, htmlMainText } from './check.js';
+import { mapLimit } from './limit.js';
 
 export const norm = (s) =>
   s
@@ -19,15 +20,16 @@ export const norm = (s) =>
  * @param {string} ctx.site            client domain (never an external source)
  * @param {string[]} ctx.excluded      competitors and serp_exclude domains
  * @param {number} [ctx.max]           keep at most this many
+ * @param {number} [ctx.concurrency]   fetches in flight at once
  * @returns {Promise<{verified:Array, failed:Array<{url:string, reason:string}>}>}
  */
-export async function verifySources(candidates, { fetchPage, site, excluded = [], max = 3 }) {
+export async function verifySources(candidates, { fetchPage, site, excluded = [], max = 3, concurrency = 4 }) {
   const verified = [];
   const failed = [];
   const seen = new Set();
   const blocked = (d) => d === site || d.endsWith('.' + site) || excluded.some((x) => d === x || d.endsWith('.' + x));
 
-  const checks = candidates.map(async (c) => {
+  const check = async (c) => {
     const url = String(c.url || '').trim();
     if (!/^https:\/\//i.test(url)) return { c, reason: 'not an https URL' };
     const d = domain(url);
@@ -45,9 +47,9 @@ export async function verifySources(candidates, { fetchPage, site, excluded = []
     const text = norm(htmlMainText(res.body || ''));
     if (!text.includes(words.join(' '))) return { c, reason: 'quote not found on the page' };
     return { c, ok: true, finalUrl: res.url || url };
-  });
+  };
 
-  for (const r of await Promise.all(checks)) {
+  for (const r of await mapLimit(candidates, concurrency, check)) {
     if (!r.ok) {
       failed.push({ url: r.c.url, reason: r.reason });
       continue;

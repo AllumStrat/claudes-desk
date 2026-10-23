@@ -41,6 +41,12 @@ export const DEFAULTS = {
   lengthByType: { service: 1200, location: 1100, blog: 1400 },
   // Cap on sitemap URLs handed to the planner.
   maxSitemapUrls: 300,
+  // Most source candidates taken from the model per round (the plan, then
+  // the replacement call). The brief's own external_sources are capped in
+  // brief.js.
+  maxCandidates: 4,
+  // Fetches in flight at once: source checks and the --live link check.
+  fetchConcurrency: 4,
 };
 
 export function resolveConfig(overrides = {}) {

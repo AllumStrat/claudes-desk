@@ -14,6 +14,37 @@ const TYPES = ['service', 'location', 'blog'];
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const list = (v) => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]);
 
+// Caps on what one brief may hold. A real brief is far inside them; they stop
+// a pasted or hostile brief from fanning out into hundreds of fetches or a
+// prompt the size of a book.
+export const LIMITS = {
+  external_sources: 10,
+  siblings: 10,
+  internal_pages: 300,
+  facts: 100,
+  voice_of_customer: 100,
+  competitors: 50,
+  retired_names: 50,
+  keywords: 50, // each of keywords.variants, .secondary and .baseline
+  text: 2048, // any one name, fact, review line, URL, claim or quote
+  notes: 5000, // page.notes
+  markdown: 60_000, // one sibling page given as Markdown
+};
+
+/** A trimmed string field, refused when it runs past its cap. */
+function text(v, name, max = LIMITS.text) {
+  const s = str(v);
+  if (s.length > max) throw new BriefError(`${name} is ${s.length} characters long; the most is ${max}.`);
+  return s;
+}
+
+/** A list field, refused when it has more entries than its cap. */
+function capped(v, name, max = LIMITS[name]) {
+  const xs = list(v);
+  if (xs.length > max) throw new BriefError(`${name} has ${xs.length} entries; the most is ${max}.`);
+  return xs;
+}
+
 function bareDomain(site) {
   const s = str(site).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
   return s.startsWith('www.') ? s.slice(4) : s;
@@ -39,63 +70,72 @@ function bareDomain(site) {
 export function normalizeBrief(input) {
   if (!input || typeof input !== 'object') throw new BriefError('The brief has to be a JSON object.');
   const page = input.page || {};
-  const type = str(page.type).toLowerCase();
+  const type = text(page.type, 'page.type').toLowerCase();
   if (!TYPES.includes(type)) throw new BriefError(`page.type must be one of ${TYPES.join(', ')}.`);
-  const site = bareDomain(input.site);
+  const site = bareDomain(text(input.site, 'site'));
   if (!site || !checkUrl(`https://${site}/`).ok) throw new BriefError('site must be the client domain, like example.com.');
-  const business = str(input.business);
+  const business = text(input.business, 'business');
   if (!business) throw new BriefError('business (the client business name) is required.');
-  if (!str(page.service) && !str(page.primary) && !str(page.topic)) {
+  const p = Object.fromEntries(['subtype', 'service', 'topic', 'place', 'primary', 'slug'].map((k) => [k, text(page[k], `page.${k}`)]));
+  if (!p.service && !p.primary && !p.topic) {
     throw new BriefError('page.service, page.topic or page.primary is required so the writer knows the search.');
   }
-  if (type === 'location' && !str(page.place)) throw new BriefError('A location page needs page.place.');
+  if (type === 'location' && !p.place) throw new BriefError('A location page needs page.place.');
 
-  const internal = list(input.internal_pages)
-    .map((p) => (typeof p === 'string' ? { url: p } : p))
-    .filter((p) => p && str(p.url))
-    .map((p) => ({ url: toInternalPath(str(p.url), site), title: str(p.title) }));
+  const internal = capped(input.internal_pages, 'internal_pages')
+    .map((x) => (typeof x === 'string' ? { url: x } : x))
+    .filter((x) => x && str(x.url))
+    .map((x, i) => ({ url: toInternalPath(text(x.url, `internal_pages[${i}].url`), site), title: text(x.title, `internal_pages[${i}].title`) }));
   const conversion = input.conversion || {};
-  const conv = str(conversion.url) ? { action: str(conversion.action) || 'Contact the business', url: toInternalPath(str(conversion.url), site) } : null;
-  if (conv && !internal.some((p) => p.url === conv.url)) internal.push({ url: conv.url, title: conv.action });
+  const convUrl = text(conversion.url, 'conversion.url');
+  const conv = convUrl ? { action: text(conversion.action, 'conversion.action') || 'Contact the business', url: toInternalPath(convUrl, site) } : null;
+  if (conv && !internal.some((x) => x.url === conv.url)) internal.push({ url: conv.url, title: conv.action });
 
-  const facts = list(input.facts).map((f) => (typeof f === 'string' ? { fact: f, source: '' } : { fact: str(f.fact), source: str(f.source) })).filter((f) => f.fact);
+  const facts = capped(input.facts, 'facts')
+    .map((f, i) => (typeof f === 'string' ? { fact: text(f, `facts[${i}]`), source: '' } : { fact: text(f?.fact, `facts[${i}].fact`), source: text(f?.source, `facts[${i}].source`) }))
+    .filter((f) => f.fact);
 
   const wt = page.words_target == null ? null : Number(page.words_target);
   if (wt != null && !Number.isFinite(wt)) throw new BriefError('page.words_target must be a number.');
 
+  const kws = input.keywords || {};
+  const words = (k) => capped(kws[k], `keywords.${k}`, LIMITS.keywords).map((x, i) => text(x, `keywords.${k}[${i}]`)).filter(Boolean);
+  const baseline = capped(kws.baseline, 'keywords.baseline', LIMITS.keywords);
+  baseline.forEach((b, i) => text(typeof b === 'string' ? b : JSON.stringify(b) ?? '', `keywords.baseline[${i}]`));
+
   return {
-    client: str(input.client) || site.split('.')[0],
+    client: text(input.client, 'client') || site.split('.')[0],
     business,
-    brand: str(input.brand) || business,
+    brand: text(input.brand, 'brand') || business,
     site,
-    page: {
-      type,
-      subtype: str(page.subtype),
-      service: str(page.service),
-      topic: str(page.topic),
-      place: str(page.place),
-      primary: str(page.primary),
-      slug: str(page.slug),
-      words_target: wt,
-      notes: str(page.notes),
-    },
+    page: { type, ...p, words_target: wt, notes: text(page.notes, 'page.notes', LIMITS.notes) },
     facts,
-    voice_of_customer: list(input.voice_of_customer).map(str).filter(Boolean),
+    voice_of_customer: capped(input.voice_of_customer, 'voice_of_customer').map((v, i) => text(v, `voice_of_customer[${i}]`)).filter(Boolean),
     conversion: conv,
-    internal_pages: dedupeBy(internal, (p) => p.url),
-    external_sources: list(input.external_sources)
-      .map((s) => (typeof s === 'string' ? { url: s } : s))
-      .filter((s) => s && /^https:\/\//i.test(str(s.url)))
-      .map((s) => ({ url: str(s.url), claim: str(s.claim), quote: str(s.quote) })),
+    internal_pages: dedupeBy(internal, (x) => x.url),
+    external_sources: capped(input.external_sources, 'external_sources')
+      .map((x) => (typeof x === 'string' ? { url: x } : x))
+      .filter((x) => x && /^https:\/\//i.test(str(x.url)))
+      .map((x, i) => ({ url: text(x.url, `external_sources[${i}].url`), claim: text(x.claim, `external_sources[${i}].claim`), quote: text(x.quote, `external_sources[${i}].quote`) })),
     keywords: {
-      primary: str(input.keywords?.primary),
-      variants: list(input.keywords?.variants).map(str).filter(Boolean),
-      secondary: list(input.keywords?.secondary).map(str).filter(Boolean),
-      baseline: list(input.keywords?.baseline),
+      primary: text(kws.primary, 'keywords.primary'),
+      variants: words('variants'),
+      secondary: words('secondary'),
+      baseline,
     },
-    competitors: list(input.competitors).map(bareDomain).filter(Boolean),
-    retired_names: list(input.retired_names).map(str).filter(Boolean),
-    siblings: list(input.siblings).filter((s) => s && (str(s.url) || str(s.markdown))).map((s) => ({ name: str(s.name) || str(s.url), url: str(s.url), markdown: s.markdown || null })),
+    competitors: capped(input.competitors, 'competitors').map((c, i) => bareDomain(text(c, `competitors[${i}]`))).filter(Boolean),
+    retired_names: capped(input.retired_names, 'retired_names').map((n, i) => text(n, `retired_names[${i}]`)).filter(Boolean),
+    siblings: capped(input.siblings, 'siblings')
+      .filter((x) => x && (str(x.url) || str(x.markdown)))
+      .map((x, i) => {
+        const url = text(x.url, `siblings[${i}].url`);
+        let markdown = null;
+        if (typeof x.markdown === 'string' && x.markdown) {
+          text(x.markdown, `siblings[${i}].markdown`, LIMITS.markdown);
+          markdown = x.markdown;
+        }
+        return { name: text(x.name, `siblings[${i}].name`) || url, url, markdown };
+      }),
     sitemap: input.sitemap === true,
   };
 }

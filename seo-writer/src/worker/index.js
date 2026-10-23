@@ -13,6 +13,10 @@ import { createDohResolver } from '../core/doh.js';
 import { copyDocName } from '../core/copydoc.js';
 import { BriefError } from '../core/brief.js';
 
+// The largest request body accepted. A full brief with ten pasted siblings
+// is well under it.
+export const MAX_BODY_BYTES = 256 * 1024;
+
 const json = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
 
 /** Compares two strings in time that does not depend on where they differ. */
@@ -24,6 +28,37 @@ export function sameToken(a, b) {
   return diff === 0;
 }
 
+/**
+ * Reads the body as text, stopping at max bytes. Content-Length is checked
+ * first, but the count is what decides: the header can be missing or wrong.
+ * Resolves to null when the body is too big.
+ */
+export async function readBody(request, max = MAX_BODY_BYTES) {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(bytes);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
 export async function handle(request, env, deps = {}) {
   const url = new URL(request.url);
   if (url.pathname !== '/api/write') return json(404, { error: 'Not found' });
@@ -32,12 +67,15 @@ export async function handle(request, env, deps = {}) {
   const auth = request.headers.get('authorization') || '';
   if (!auth.startsWith('Bearer ') || !sameToken(auth.slice(7), env.WRITER_TOKEN)) return json(401, { error: 'Unauthorized' });
 
+  const raw = await readBody(request);
+  if (raw == null) return json(413, { error: `The request body is over ${MAX_BODY_BYTES / 1024} KB.` });
   let body;
   try {
-    body = await request.json();
+    body = JSON.parse(raw);
   } catch {
     return json(400, { error: 'Send JSON: { "brief": {...} }' });
   }
+  if (!body || typeof body !== 'object') return json(400, { error: 'Send JSON: { "brief": {...} }' });
   let config;
   try {
     config = resolveConfig({ ...(env.WRITER_EFFORT ? { effort: JSON.parse(env.WRITER_EFFORT) } : {}), ...(env.WRITER_MODEL ? { model: env.WRITER_MODEL } : {}) });

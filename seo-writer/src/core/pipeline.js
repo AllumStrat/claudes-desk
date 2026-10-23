@@ -12,6 +12,7 @@ import { UsageLog } from './usage.js';
 import { verifySources } from './sources.js';
 import { readSitemap } from './net.js';
 import { buildCopyDoc } from './copydoc.js';
+import { limited } from './limit.js';
 import * as P from './prompts.js';
 
 export class WriterError extends Error {
@@ -95,13 +96,15 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
   const want = params.content.external_links[0];
   let sources = { verified: [], failed: [], checked: Boolean(net) };
   if (net) {
-    const candidates = [...brief.external_sources.map((s) => ({ ...s, source_rank: 0 })), ...plan.external_candidates];
-    const v = await verifySources(candidates, { fetchPage: net.fetchPage, site: brief.site, excluded, max: params.content.external_links[1] });
+    const fromModel = (list) => (Array.isArray(list) ? list.slice(0, config.maxCandidates) : []);
+    const candidates = [...brief.external_sources.map((s) => ({ ...s, source_rank: 0 })), ...fromModel(plan.external_candidates)];
+    const opts = { fetchPage: net.fetchPage, site: brief.site, excluded, concurrency: config.fetchConcurrency };
+    const v = await verifySources(candidates, { ...opts, max: params.content.external_links[1] });
     sources = { ...sources, ...v };
     for (let i = 0; i < config.sourceRetries && sources.verified.length < want && sources.failed.length; i++) {
       const more = await call('sources', 'sources', [briefText, { text: P.sourcesTask(sources.failed) }], config.effort.sources);
       const known = new Set(sources.verified.map((s) => s.url));
-      const r = await verifySources(more.external_candidates, { fetchPage: net.fetchPage, site: brief.site, excluded, max: params.content.external_links[1] - sources.verified.length });
+      const r = await verifySources(fromModel(more.external_candidates), { ...opts, max: params.content.external_links[1] - sources.verified.length });
       sources.verified.push(...r.verified.filter((s) => !known.has(s.url)));
       sources.failed.push(...r.failed);
     }
@@ -127,6 +130,8 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
   const siblings = await loadSiblings(brief, net);
   const allowed = allowedLinks(brief, sitemapUrls, sources.verified);
   const unfixable = unfixableChecks(brief, sources, sitemapUrls);
+  // The --live check fetches only links that are allowed anyway, a few at a time.
+  const liveStatus = live && net ? liveChecker(net.status, brief, allowed, config.fetchConcurrency) : null;
   const changes = [];
   const warnNotes = [];
   const safe = dropUnsafe(state, d.inbound_edits);
@@ -134,7 +139,7 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
   let check;
   for (let round = 0; ; round++) {
     const draft = assemble(brief, plan, state, target.n);
-    check = await runChecks(draft, { params, banned, live: live && net ? net.status : null, siblings, brief, allowed, notes });
+    check = await runChecks(draft, { params, banned, live: liveStatus, siblings, brief, allowed, notes });
     const fixable = check.results.filter((r) => r[0] === 'FAIL' && !isUnfixable(r, unfixable));
     check.unfixable = check.results.filter((r) => r[0] === 'FAIL' && isUnfixable(r, unfixable));
     check.rounds = round;
@@ -295,6 +300,12 @@ function linkProblem(url, brief, allowed) {
     return allowed.internal.has(allowed.key(u.pathname)) ? null : `internal link ${url} is not in the brief's page list`;
   }
   return allowed.internal.has(allowed.key(url)) ? null : `internal link ${url} is not in the brief's page list`;
+}
+
+/** net.status for check.py's --live step: allowed URLs only, at most n at once. */
+function liveChecker(status, brief, allowed, n) {
+  const run = limited(status, n);
+  return (url) => (linkProblem(url, brief, allowed) ? Promise.resolve([null, 'not on the allowed lists, so not fetched']) : run(url));
 }
 
 /** Every FAIL for content that must not reach the copy: in the body, title and meta. */
