@@ -295,19 +295,35 @@ $('signin-form').addEventListener('submit', async (e) => {
   b.disabled = false;
 });
 
-// The emailed link is /#signin=<token>. The token never leaves this page
-// until the person presses the button, so mail scanners that open links
-// cannot use it up.
+// The emailed link is /#signin=<token>. The token is only used up when the
+// person presses the button, so mail scanners that open links cannot use it.
+// The panel shows which email the link signs in to, because someone could
+// send you a link to their own account.
 const signinToken = (location.hash.match(/^#signin=([A-Za-z0-9_-]{43})$/) || [])[1];
 if (signinToken) {
   history.replaceState(null, '', location.pathname);
   $('finish-signin').hidden = false;
-  $('finish-signin-button').addEventListener('click', async () => {
-    const { ok, data } = await api('/api/auth/verify', { token: signinToken });
-    $('finish-signin').hidden = true;
-    statusEl.textContent = ok ? 'You are signed in.' : message(data, 'Could not sign in.');
-    await loadMe();
-  });
+  (async () => {
+    const { ok, data } = await api('/api/auth/peek', { token: signinToken });
+    if (!ok) {
+      $('finish-signin-text').textContent = message(data, 'That sign-in link is not valid.');
+      return;
+    }
+    $('finish-signin-text').textContent = `This link signs you in as ${data.email}. Only continue if that is your email address.`;
+    if (data.signedInAs) {
+      $('finish-signin-note').textContent = `You are signed in as ${data.signedInAs} now. Continuing switches you to ${data.email}.`;
+      $('finish-signin-note').hidden = false;
+    }
+    const b = $('finish-signin-button');
+    b.textContent = `Sign in as ${data.email}`;
+    b.hidden = false;
+    b.addEventListener('click', async () => {
+      const res = await api('/api/auth/verify', { token: signinToken, email: data.email });
+      $('finish-signin').hidden = true;
+      statusEl.textContent = res.ok ? 'You are signed in.' : message(res.data, 'Could not sign in.');
+      await loadMe();
+    });
+  })();
 }
 
 if (new URLSearchParams(location.search).get('paid') === '1') {

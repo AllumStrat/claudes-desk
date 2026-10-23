@@ -20,7 +20,7 @@ test('worker answers the API and refuses private targets without fetching', asyn
     const start = await worker.fetch(post('/api/auth/start', '{"email":"w@example.com"}', { 'cf-connecting-ip': '1.1.1.1' }), env);
     assert.equal(start.status, 200);
     const token = env.EMAIL.sent[0].text.match(/#signin=(\S+)/)[1];
-    const verify = await worker.fetch(post('/api/auth/verify', JSON.stringify({ token })), env);
+    const verify = await worker.fetch(post('/api/auth/verify', JSON.stringify({ token, email: 'w@example.com' })), env);
     const cookie = verify.headers.get('set-cookie').split(';')[0];
     assert.match(cookie, /^__Host-sid=/);
     const res = await worker.fetch(post('/api/audit', '{"url":"http://169.254.169.254/"}', { cookie }), env);

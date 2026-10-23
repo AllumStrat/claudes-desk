@@ -26,12 +26,19 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
     async saveLoginToken(tokenHash, email, now, ttlMs) {
       await run('INSERT INTO login_tokens (token_hash, email, created_at, expires_at) VALUES (?, ?, ?, ?)', tokenHash, email, now, now + ttlMs);
     },
-    // Uses a token exactly once. Returns the email, or null.
-    async useLoginToken(tokenHash, now) {
+    // The email a token is for, without using it up.
+    async peekLoginToken(tokenHash, now) {
+      const row = await one('SELECT email FROM login_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', tokenHash, now);
+      return row?.email ?? null;
+    },
+    // Uses a token exactly once, and only for the email the person confirmed.
+    // Returns the email, or null.
+    async useLoginToken(tokenHash, now, email) {
       const row = await one(
-        'UPDATE login_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING email',
+        'UPDATE login_tokens SET used_at = ? WHERE token_hash = ? AND email = ? AND used_at IS NULL AND expires_at > ? RETURNING email',
         now,
         tokenHash,
+        email,
         now,
       );
       return row?.email ?? null;

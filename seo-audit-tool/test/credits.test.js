@@ -75,7 +75,7 @@ test('free audits need the human check when it is on; paid ones do not', async (
   const c = client(ctx);
   await c.post('/api/auth/start', { email: 'a@example.com', turnstileToken: 'human' });
   const token = ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1];
-  await c.post('/api/auth/verify', { token });
+  await c.post('/api/auth/verify', { token, email: 'a@example.com' });
   assert.equal((await c.post('/api/audit', { url: 'ok.example.com' })).status, 403);
   assert.equal((await c.post('/api/audit', { url: 'ok.example.com', turnstileToken: 'human' })).status, 200);
 });
@@ -219,7 +219,7 @@ test('refused audits do not count toward the daily cap or the per-site limit', a
   const ctx = makeApp({ verifyHuman: async (t) => t === 'human', env: { AUDIT_RATE_LIMIT: '100', AUDITS_PER_HOUR_ACCOUNT: '100' } });
   const c = client(ctx);
   await c.post('/api/auth/start', { email: 'a@example.com', turnstileToken: 'human' });
-  await c.post('/api/auth/verify', { token: ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1] });
+  await c.post('/api/auth/verify', { token: ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1], email: 'a@example.com' });
   assert.equal((await c.post('/api/audit', { url: 'ok.example.com', turnstileToken: 'human' })).status, 200);
   for (let i = 0; i < 5; i++) assert.equal((await c.post('/api/audit', { url: 'ok.example.com' })).status, 403); // no human check
   for (let i = 0; i < 5; i++) assert.equal((await c.post('/api/audit', { url: 'ok.example.com', turnstileToken: 'human' })).status, 402); // free audit used

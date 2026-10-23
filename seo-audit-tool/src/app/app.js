@@ -191,13 +191,30 @@ export function createApp(deps) {
     return done;
   }
 
-  async function authVerify(request, ip) {
+  // Sign-in is two steps so a link someone else sent cannot sign a person
+  // into the sender's account unnoticed: the page first shows which email the
+  // link is for (peek), and the person confirms that email (verify).
+  async function authPeek(request, ip) {
     const { body, error } = await readJson(request, ['token']);
     if (error) return error;
     const limited = await limit(`verify-ip:${await hash(`ip:${ip}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
     if (limited) return limited;
     if (typeof body.token !== 'string' || !TOKEN_RE.test(body.token)) return json(400, { error: 'That sign-in link is not valid.' });
-    const email = await store.useLoginToken(await sha256Hex(body.token), now());
+    const email = await store.peekLoginToken(await sha256Hex(body.token), now());
+    if (!email) return json(400, { error: 'That sign-in link has expired or was already used. Ask for a new one.' });
+    const current = await currentUser(request);
+    return json(200, { email, signedInAs: current && current.email !== email ? current.email : null });
+  }
+
+  async function authVerify(request, ip) {
+    const { body, error } = await readJson(request, ['token', 'email']);
+    if (error) return error;
+    const limited = await limit(`verify-ip:${await hash(`ip:${ip}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
+    if (limited) return limited;
+    if (typeof body.token !== 'string' || !TOKEN_RE.test(body.token)) return json(400, { error: 'That sign-in link is not valid.' });
+    const confirmed = normalizeEmail(body.email);
+    if (!confirmed) return json(400, { error: 'Confirm the email address to sign in.' });
+    const email = await store.useLoginToken(await sha256Hex(body.token), now(), confirmed);
     if (!email) return json(400, { error: 'That sign-in link has expired or was already used. Ask for a new one.' });
     const user = await store.upsertUser(email, now());
     const sid = randomToken();
@@ -461,6 +478,8 @@ export function createApp(deps) {
       switch (path) {
         case '/api/auth/start':
           return await authStart(request, ip);
+        case '/api/auth/peek':
+          return await authPeek(request, ip);
         case '/api/auth/verify':
           return await authVerify(request, ip);
         case '/api/auth/logout':

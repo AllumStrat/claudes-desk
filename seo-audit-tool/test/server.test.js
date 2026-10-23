@@ -40,7 +40,7 @@ test('the local server runs sign-in end to end and rejects big bodies', async ()
     const start = await fetch(`${base}/api/auth/start`, { method: 'POST', headers, body: JSON.stringify({ email: 'local@example.com' }) });
     assert.equal(start.status, 200);
     const token = mailer.sent[0].text.match(/#signin=(\S+)/)[1];
-    const verify = await fetch(`${base}/api/auth/verify`, { method: 'POST', headers, body: JSON.stringify({ token }) });
+    const verify = await fetch(`${base}/api/auth/verify`, { method: 'POST', headers, body: JSON.stringify({ token, email: 'local@example.com' }) });
     const cookie = verify.headers.get('set-cookie');
     assert.match(cookie, /^sid=.+HttpOnly; SameSite=Lax/);
     const me = await (await fetch(`${base}/api/me`, { headers: { cookie: cookie.split(';')[0] } })).json();

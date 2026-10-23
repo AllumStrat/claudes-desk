@@ -104,7 +104,10 @@ export function client(ctx, { ip = '1.2.3.4', origin = ORIGIN } = {}) {
       if (start.status !== 200) throw new Error(`sign-in start failed ${start.status} ${JSON.stringify(start.data)}`);
       const mail = ctx.mailer.sent[before];
       const token = mail.text.match(/#signin=([A-Za-z0-9_-]{43})/)[1];
-      const verify = await send('POST', '/api/auth/verify', { token });
+      // Like the page: look up which email the link is for, then confirm it.
+      const peek = await send('POST', '/api/auth/peek', { token });
+      if (peek.status !== 200) throw new Error('peek failed');
+      const verify = await send('POST', '/api/auth/verify', { token, email: peek.data.email });
       if (verify.status !== 200) throw new Error('verify failed');
       return { token, mail };
     },

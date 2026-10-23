@@ -29,7 +29,7 @@ test('magic link sign-in sets a session cookie and works once', async () => {
 
   // The same link cannot be used again, from anywhere.
   const other = client(ctx, { ip: '9.9.9.9' });
-  const again = await other.post('/api/auth/verify', { token });
+  const again = await other.post('/api/auth/verify', { token, email: 'jacob@example.com' });
   assert.equal(again.status, 400);
   assert.equal(other.cookie, '');
 });
@@ -39,7 +39,7 @@ test('session cookie is HttpOnly, Secure and SameSite on https', async () => {
   const c = client(ctx);
   const start = await c.post('/api/auth/start', { email: 'a@example.com' });
   const token = ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1];
-  const res = await c.post('/api/auth/verify', { token });
+  const res = await c.post('/api/auth/verify', { token, email: 'a@example.com' });
   assert.match(res.setCookie, /^__Host-sid=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=\d+; Secure$/);
   assert.equal(start.data.message, 'Check your email for a sign-in link.');
 });
@@ -50,7 +50,7 @@ test('links expire', async () => {
   await c.post('/api/auth/start', { email: 'a@example.com' });
   const token = ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1];
   ctx.time.t += 16 * 60_000;
-  assert.equal((await c.post('/api/auth/verify', { token })).status, 400);
+  assert.equal((await c.post('/api/auth/verify', { token, email: 'a@example.com' })).status, 400);
 });
 
 test('only the hash of tokens and sessions is stored', async () => {
@@ -153,4 +153,33 @@ test('account deletion removes the user, but not the free-audit claim', async ()
   const again = client(ctx);
   await again.signIn('a@example.com');
   assert.equal((await again.post('/api/audit', { url: 'ok.example.com' })).status, 402);
+});
+
+test('a sign-in link shows its email first and only works when that email is confirmed', async () => {
+  const ctx = makeApp();
+  const attacker = client(ctx, { ip: '6.6.6.6' });
+  await attacker.post('/api/auth/start', { email: 'attacker@example.com' });
+  const token = ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1];
+  // The victim is signed in to their own account and opens the attacker's link.
+  const victim = client(ctx);
+  await victim.signIn('victim@example.com');
+  const peek = await victim.post('/api/auth/peek', { token });
+  assert.equal(peek.status, 200);
+  assert.deepEqual(peek.data, { email: 'attacker@example.com', signedInAs: 'victim@example.com' });
+  // Peeking does not use the link up, and a verify without the shown email fails.
+  assert.equal((await victim.post('/api/auth/verify', { token })).status, 400);
+  assert.equal((await victim.post('/api/auth/verify', { token, email: 'victim@example.com' })).status, 400);
+  assert.equal((await victim.get('/api/me')).data.user.email, 'victim@example.com');
+  // Confirming the shown email works once.
+  assert.equal((await victim.post('/api/auth/verify', { token, email: 'attacker@example.com' })).status, 200);
+  assert.equal((await victim.post('/api/auth/peek', { token })).status, 400);
+  assert.equal((await client(ctx).post('/api/auth/peek', { token: 'x' })).status, 400);
+});
+
+test('the confirm panel names the account before signing in', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const js = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(js, /\/api\/auth\/peek/);
+  assert.match(js, /This link signs you in as \$\{data\.email\}/);
+  assert.match(js, /api\('\/api\/auth\/verify', \{ token: signinToken, email: data\.email \}\)/);
 });
