@@ -12,6 +12,7 @@ import { createNet } from '../core/net.js';
 import { copyDocName } from '../core/copydoc.js';
 import { PRICING } from '../core/config.js';
 import { createNodeNetwork } from './net.js';
+import { outPath } from './paths.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -47,7 +48,7 @@ const { runs, summary } = await compareModels(brief, {
 await mkdir(values.out, { recursive: true });
 for (const r of runs) {
   if (!r.result) continue;
-  await writeFile(join(values.out, `${r.model}-${copyDocName(r.result)}`), r.result.copyDoc);
+  await writeFile(outPath(values.out, `${r.model}-${copyDocName(r.result)}`), r.result.copyDoc);
 }
 await writeFile(join(values.out, 'comparison.md'), summary);
 console.log(summary);

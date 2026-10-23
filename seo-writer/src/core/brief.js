@@ -45,6 +45,16 @@ function capped(v, name, max = LIMITS[name]) {
   return xs;
 }
 
+/** The client's short name as it goes into file names: a-z, 0-9 and dashes only. */
+export function clientSlug(v, max = 60) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, max)
+    .replace(/-+$/, '');
+}
+
 function bareDomain(site) {
   const s = str(site).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
   return s.startsWith('www.') ? s.slice(4) : s;
@@ -55,7 +65,7 @@ function bareDomain(site) {
  * required field is missing.
  *
  * Shape (see examples/brief.example.json):
- *   client, business, site, brand?              who the page is for
+ *   client, business, site, brand?              who the page is for (client is cut to a-z, 0-9 and dashes)
  *   page: { type, subtype?, service?, place?, primary?, slug?, words_target?, notes? }
  *   facts: [{ fact, source }]                   confirmed facts only
  *   voice_of_customer: [string]                 review lines, customer questions
@@ -104,7 +114,7 @@ export function normalizeBrief(input) {
   baseline.forEach((b, i) => text(typeof b === 'string' ? b : JSON.stringify(b) ?? '', `keywords.baseline[${i}]`));
 
   return {
-    client: text(input.client, 'client') || site.split('.')[0],
+    client: clientSlug(text(input.client, 'client')) || clientSlug(site.split('.')[0]) || 'client',
     business,
     brand: text(input.brand, 'brand') || business,
     site,

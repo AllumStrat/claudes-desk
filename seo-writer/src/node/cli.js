@@ -5,7 +5,7 @@
 // usage log to the out folder and prints the check report and cost.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { writePage } from '../core/pipeline.js';
 import { createClaude } from '../core/llm.js';
@@ -13,6 +13,7 @@ import { resolveConfig } from '../core/config.js';
 import { createNet } from '../core/net.js';
 import { copyDocName } from '../core/copydoc.js';
 import { createNodeNetwork } from './net.js';
+import { outPath } from './paths.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -69,13 +70,15 @@ const started = Date.now();
 
 try {
   const r = await writePage(brief, { llm, net, live: values.live, config, onProgress: (step) => console.error(`… ${step}`) });
-  await mkdir(values.out, { recursive: true });
   const name = copyDocName(r);
-  await writeFile(join(values.out, name), r.copyDoc);
-  await writeFile(join(values.out, name.replace(/-copy\.md$/, '-usage.json')), JSON.stringify({ model: config.model, seconds: Math.round((Date.now() - started) / 1000), ...r.usage, usageTable: r.usageTable }, null, 2));
+  const docPath = outPath(values.out, name);
+  const usagePath = outPath(values.out, name.replace(/-copy\.md$/, '-usage.json'));
+  await mkdir(values.out, { recursive: true });
+  await writeFile(docPath, r.copyDoc);
+  await writeFile(usagePath, JSON.stringify({ model: config.model, seconds: Math.round((Date.now() - started) / 1000), ...r.usage, usageTable: r.usageTable }, null, 2));
   if (r.check) console.log(r.check.report);
   console.log(`\n${r.status === 'needs_decision' ? `Stopped before drafting: ${r.plan.stop_reason}` : `Status: ${r.status}`}`);
-  console.log(`Copy doc: ${join(values.out, name)}`);
+  console.log(`Copy doc: ${docPath}`);
   console.log(`Cost: $${r.usage.cost.toFixed(4)} over ${r.usage.calls} calls (${Math.round((Date.now() - started) / 1000)}s)`);
   process.exit(r.status === 'red' ? 1 : 0);
 } catch (err) {

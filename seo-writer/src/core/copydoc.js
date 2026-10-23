@@ -3,6 +3,7 @@
 // font or color notes.
 
 import { parseFrontmatter, stripMd, findLinks } from './check.js';
+import { clientSlug } from './brief.js';
 
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const table = (head, rows) => (rows.length ? [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.map(esc).join(' | ')} |`)].join('\n') : '_None._');
@@ -11,9 +12,10 @@ const fence = (text, lang = '') => {
   return `${ticks}${lang}\n${String(text).trimEnd()}\n${ticks}`;
 };
 
+/** [client]-[slug]-copy.md, made only of a-z, 0-9 and dashes, so it is always a bare file name. */
 export function copyDocName(result) {
-  const slug = (result.plan?.slug || '/page/').replace(/^\/|\/$/g, '').replace(/\//g, '-') || 'home';
-  return `${result.brief.client}-${slug}-copy.md`;
+  const slug = clientSlug((result.plan?.slug || '/page/').replace(/\//g, '-'), 200) || 'home';
+  return `${clientSlug(result.brief.client) || 'client'}-${slug}-copy.md`;
 }
 
 /**

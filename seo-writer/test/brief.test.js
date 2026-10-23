@@ -56,3 +56,21 @@ test('a brief past its caps is refused with the field and the cap', async () => 
   for (const [over, msg] of bad) assert.throws(() => normalizeBrief(brief(over)), (e) => e instanceof BriefError && msg.test(e.message), String(msg));
   assert.doesNotThrow(() => normalizeBrief(brief({ external_sources: many(LIMITS.external_sources, (i) => `https://s${i}.example.org/`) })));
 });
+
+test('the client name is cut to a-z, 0-9 and dashes before it names a file', async () => {
+  const { copyDocName } = await import('../src/core/copydoc.js');
+  const b = normalizeBrief(brief({ client: '../../../Users/photography/.zshrc#' }));
+  assert.equal(b.client, 'users-photography-zshrc');
+  assert.equal(normalizeBrief(brief({ client: '../..' })).client, 'example-auto');
+  assert.equal(copyDocName({ brief: b, plan: { slug: '/service/brakes/' } }), 'users-photography-zshrc-service-brakes-copy.md');
+  assert.equal(copyDocName({ brief: { client: '/etc/x' }, plan: { slug: '/../../a/' } }), 'etc-x-a-copy.md');
+});
+
+test('the CLI writes only inside --out', async () => {
+  const { outPath } = await import('../src/node/paths.js');
+  const { resolve, join } = await import('node:path');
+  assert.equal(outPath('out', 'a-copy.md'), join(resolve('out'), 'a-copy.md'));
+  for (const name of ['../a-copy.md', '../../Users/x/.zshrc#-x-copy.md', '/etc/passwd', '', '.', 'sub/../../a.md']) {
+    assert.throws(() => outPath('out', name), /outside the out folder/, name);
+  }
+});
