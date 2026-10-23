@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { SECURITY_HEADERS } from '../app/http.js';
+import { SECURITY_HEADERS, proxiedIp } from '../app/http.js';
 import { buildLocalApp } from './config.js';
 
 const PUBLIC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public');
@@ -19,7 +19,7 @@ const STATIC = {
 export function createServer(env = process.env, { port = Number(env.PORT || 8787), overrides } = {}) {
   const built = buildLocalApp(env, { port, overrides });
   const { app, config } = built;
-  const trustProxy = env.TRUST_PROXY === '1';
+  const trustProxy = env.TRUST_PROXY || '';
 
   const server = http.createServer(async (req, res) => {
     const send = (status, body, headers = {}) => {
@@ -40,8 +40,7 @@ export function createServer(env = process.env, { port = Number(env.PORT || 8787
       for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
       const request = new Request(url, { method: req.method, headers, body: hasBody ? Readable.toWeb(req) : undefined, duplex: 'half' });
-      const forwarded = trustProxy ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() : '';
-      const response = await app.fetch(request, { ip: forwarded || req.socket.remoteAddress || '' });
+      const response = await app.fetch(request, { ip: proxiedIp(trustProxy, req.headers, req.socket.remoteAddress || '') });
 
       const out = {};
       response.headers.forEach((v, k) => {
@@ -83,7 +82,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`SEO audit test server on ${config.appOrigin}`);
     console.log(`Email: ${config.email.provider === 'log' ? 'sign-in links print here' : config.email.provider}`);
     console.log(`Payments: ${config.billing ? (config.billing.testMode ? 'Stripe test mode' : 'Stripe LIVE mode') : config.billingProblem || 'off (no Stripe keys)'}`);
-    console.log(`Human check: ${config.turnstileSecret ? 'on' : 'off'}`);
+    console.log(`Human check: ${config.turnstileSecret ? 'on' : 'off (local only; an https APP_ORIGIN refuses to start without it)'}`);
     console.log(`Jev judgment: ${jev ? jev.provider : 'off'}`);
   });
 }

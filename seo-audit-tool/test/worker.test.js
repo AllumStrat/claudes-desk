@@ -4,7 +4,7 @@ import worker from '../src/worker/index.js';
 import { LocalD1 } from '../src/node/sqlite-d1.js';
 
 const ORIGIN = 'https://audit.example.com';
-const baseEnv = () => ({ DB: new LocalD1(':memory:').migrate(), APP_ORIGIN: ORIGIN, HASH_SALT: 'salt', EMAIL: { sent: [], async send(m) { this.sent.push(m); } } });
+const baseEnv = () => ({ DB: new LocalD1(':memory:').migrate(), APP_ORIGIN: ORIGIN, HASH_SALT: 'salt', TURNSTILE_BYPASS: 'dev', EMAIL: { sent: [], async send(m) { this.sent.push(m); } } });
 const post = (path, body, headers = {}) =>
   new Request(`${ORIGIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', origin: ORIGIN, ...headers }, body });
 

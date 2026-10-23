@@ -26,7 +26,7 @@ export function buildApp(env) {
     auditDeps: () => ({ fetchImpl, resolveHost: createDohResolver({ fetchImpl }), jev, userAgent: env.AUDIT_USER_AGENT || DEFAULT_USER_AGENT }),
     mailer: createMailer({ ...config.email, binding: env.EMAIL }),
     stripe: config.billing ? createStripeClient({ secretKey: config.billing.secretKey }) : null,
-    verifyHuman: config.turnstileSecret ? turnstileVerifier(config.turnstileSecret) : undefined,
+    verifyHuman: config.turnstileSecret ? turnstileVerifier(config.turnstileSecret, undefined, { hostname: new URL(config.appOrigin).hostname }) : undefined,
     ipLimiter: env.IP_RATE_LIMITER,
     log: (...a) => console.error(...a),
   });

@@ -48,6 +48,7 @@ export function makeApp({ env = {}, routes, verifyHuman, stripe = fakeStripe(), 
     STRIPE_SECRET_KEY: 'sk_test_abc',
     STRIPE_PRICE_ID: 'price_test_5',
     STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    TURNSTILE_BYPASS: 'dev', // tests pass verifyHuman directly
     ...env,
   });
   const web = fakeWeb(routes || { 'https://ok.example.com/': GOOD_SITE, 'https://other.example.com/': GOOD_SITE });

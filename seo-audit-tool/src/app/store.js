@@ -244,7 +244,7 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
         db.prepare("DELETE FROM audits WHERE created_at < ? AND user_id IN (SELECT id FROM users WHERE plan != 'pro')").bind(now - FREE_AUDIT_DAYS * 86_400_000),
         db.prepare('DELETE FROM login_tokens WHERE expires_at < ?').bind(now - 86_400_000),
         db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
-        db.prepare('DELETE FROM counters WHERE window_start < ?').bind(now - 2 * 86_400_000),
+        db.prepare('DELETE FROM counters WHERE window_start < ?').bind(now - 8 * 86_400_000), // the longest window is 7 days
         db.prepare('DELETE FROM stripe_events WHERE received_at < ?').bind(now - 30 * 86_400_000),
         db
           .prepare(

@@ -1,3 +1,5 @@
+import { parseIPv6 } from '../core/url-guard.js';
+
 // HTTP helpers shared by the Worker and the local Node server.
 
 // Headers sent with every response from the app.
@@ -62,8 +64,10 @@ export function sessionCookie(name, value, { maxAgeSec, secure }) {
   return [`${name}=${value}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAgeSec}`, secure ? 'Secure' : null].filter(Boolean).join('; ');
 }
 
-// Cloudflare Turnstile server-side check.
-export function turnstileVerifier(secret, fetchImpl = globalThis.fetch) {
+// Cloudflare Turnstile server-side check. With `hostname`, the token must
+// also have been made on that site, not on someone else's page that uses
+// the same widget.
+export function turnstileVerifier(secret, fetchImpl = globalThis.fetch, { hostname } = {}) {
   return async (token, ip) => {
     const form = new URLSearchParams({ secret, response: token });
     if (ip) form.set('remoteip', ip);
@@ -74,6 +78,29 @@ export function turnstileVerifier(secret, fetchImpl = globalThis.fetch) {
     });
     if (!res.ok) return false;
     const data = await res.json();
-    return data.success === true;
+    return data.success === true && (!hostname || data.hostname === hostname);
   };
+}
+
+// The client address to key limits on. IPv6 users usually get a whole /64,
+// so every address in it counts as one connection.
+export function clientKey(ip) {
+  const groups = parseIPv6(ip || '');
+  if (!groups) return ip || '';
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) return [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join('.');
+  return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
+}
+
+// The visitor address behind the local server. TRUST_PROXY=1 takes the last
+// X-Forwarded-For entry, the one your own proxy added (earlier entries come
+// from the client and can be anything). TRUST_PROXY=cloudflare takes
+// CF-Connecting-IP; use it only when the server accepts traffic from
+// Cloudflare alone.
+export function proxiedIp(mode, headers, socketIp) {
+  if (mode === '1') {
+    const hops = String(headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return hops.at(-1) || socketIp;
+  }
+  if (mode === 'cloudflare') return String(headers['cf-connecting-ip'] || '').trim() || socketIp;
+  return socketIp;
 }

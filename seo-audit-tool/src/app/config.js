@@ -6,12 +6,27 @@ import { isTestKey } from './stripe.js';
 const num = (v, d) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? d : Number(v));
 const on = (v, d) => (v === undefined || v === '' ? d : !/^(0|false|off|no)$/i.test(String(v)));
 
+// Cloudflare's documented Turnstile test secrets (always pass, always fail,
+// or token already spent).
+export function isTurnstileTestSecret(secret) {
+  return /^[123]x0{31}AA$/.test(secret || '');
+}
+
 export function readConfig(env = {}, defaults = {}) {
   const appOrigin = String(env.APP_ORIGIN || defaults.appOrigin || '').replace(/\/+$/, '');
   if (!/^https?:\/\/[^/]+$/.test(appOrigin)) throw new Error('APP_ORIGIN must be set, like https://audit.example.com');
   const hashSalt = env.HASH_SALT || defaults.hashSalt || '';
   if (!hashSalt && appOrigin.startsWith('https:')) throw new Error('HASH_SALT must be set on a public deploy');
   const secureCookie = on(env.COOKIE_SECURE, defaults.secureCookie ?? appOrigin.startsWith('https:'));
+  // A public deploy needs the human check. Cloudflare's test secrets accept
+  // every token, so they count as no check. Only TURNSTILE_BYPASS=dev (tests,
+  // a private preview) lets an https app run without it.
+  const turnstileSecret = env.TURNSTILE_SECRET || '';
+  const turnstileReal = Boolean(turnstileSecret && env.TURNSTILE_SITE_KEY && !isTurnstileTestSecret(turnstileSecret));
+  const turnstileBypass = env.TURNSTILE_BYPASS === 'dev';
+  if (appOrigin.startsWith('https:') && !turnstileReal && !turnstileBypass) {
+    throw new Error('TURNSTILE_SECRET and TURNSTILE_SITE_KEY must be set on a public deploy (TURNSTILE_BYPASS=dev skips this for testing)');
+  }
 
   const stripeKey = env.STRIPE_SECRET_KEY || '';
   let billing = null;
@@ -43,7 +58,8 @@ export function readConfig(env = {}, defaults = {}) {
     auditsEnabled: on(env.AUDITS_ENABLED, true),
     signupsEnabled: on(env.SIGNUPS_ENABLED, true),
     turnstileSiteKey: env.TURNSTILE_SITE_KEY || '',
-    turnstileSecret: env.TURNSTILE_SECRET || '',
+    turnstileSecret,
+    turnstileBypass,
     email: { provider: env.EMAIL_PROVIDER || defaults.emailProvider || 'log', from: env.EMAIL_FROM || 'Allum SEO Audit <audit@allumstrategies.com>', apiKey: env.RESEND_API_KEY || '' },
     billing,
     billingProblem,
@@ -54,6 +70,7 @@ export function readConfig(env = {}, defaults = {}) {
       auditPerAccount: num(env.AUDITS_PER_HOUR_ACCOUNT, 10), // per hour
       auditPerTarget: num(env.AUDIT_TARGET_LIMIT, 10), // per hour, from anyone
       freePerIp: num(env.FREE_AUDITS_PER_IP_DAY, 3), // per day
+      freePerIpWeek: num(env.FREE_AUDITS_PER_IP_WEEK, 5), // per 7 days
       dailyCap: num(env.DAILY_AUDIT_CAP, 1000), // whole app, per day
       signinPerEmail: num(env.SIGNIN_PER_EMAIL, 3), // per 15 minutes
       signinPerIp: num(env.SIGNIN_PER_IP, 10), // per hour

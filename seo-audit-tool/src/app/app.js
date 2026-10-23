@@ -9,7 +9,8 @@ import { mapLimit } from '../core/util.js';
 import { createStore } from './store.js';
 import { createDbLimiter } from './limits.js';
 import { randomToken, sha256Hex } from './crypto.js';
-import { json, readCapped, parseCookies, sessionCookie } from './http.js';
+import { json, readCapped, parseCookies, sessionCookie, clientKey } from './http.js';
+import { isDisposableEmail } from './disposable.js';
 import { signInEmail, watchEmail } from './email.js';
 import { verifyStripeSignature, describeEvent } from './stripe.js';
 import { freeReport, diffReports, hasChanges } from './plans.js';
@@ -89,7 +90,7 @@ export function createApp(deps) {
 
   async function bindingLimit(ip) {
     if (!deps.ipLimiter) return null;
-    const { success } = await deps.ipLimiter.limit({ key: ip || 'unknown' });
+    const { success } = await deps.ipLimiter.limit({ key: clientKey(ip) || 'unknown' });
     return success ? null : tooMany('Too many requests from your connection. Try again in a minute.', 60);
   }
 
@@ -168,7 +169,7 @@ export function createApp(deps) {
     if (error) return error;
     const email = normalizeEmail(body.email);
     if (!email) return json(400, { error: 'Enter a valid email address.' });
-    const ipHash = await hash(`ip:${ip}`);
+    const ipHash = await hash(`ip:${clientKey(ip)}`);
     const limited =
       (await limit(`signin-ip:${ipHash}`, L.signinPerIp, HOUR, 'Too many sign-in attempts from your connection. Try again later.')) ||
       (await humanCheck(body, ip)) ||
@@ -197,7 +198,7 @@ export function createApp(deps) {
   async function authPeek(request, ip) {
     const { body, error } = await readJson(request, ['token']);
     if (error) return error;
-    const limited = await limit(`verify-ip:${await hash(`ip:${ip}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
+    const limited = await limit(`verify-ip:${await hash(`ip:${clientKey(ip)}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
     if (limited) return limited;
     if (typeof body.token !== 'string' || !TOKEN_RE.test(body.token)) return json(400, { error: 'That sign-in link is not valid.' });
     const email = await store.peekLoginToken(await sha256Hex(body.token), now());
@@ -209,7 +210,7 @@ export function createApp(deps) {
   async function authVerify(request, ip) {
     const { body, error } = await readJson(request, ['token', 'email']);
     if (error) return error;
-    const limited = await limit(`verify-ip:${await hash(`ip:${ip}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
+    const limited = await limit(`verify-ip:${await hash(`ip:${clientKey(ip)}`)}`, 30, HOUR, 'Too many sign-in attempts. Try again later.');
     if (limited) return limited;
     if (typeof body.token !== 'string' || !TOKEN_RE.test(body.token)) return json(400, { error: 'That sign-in link is not valid.' });
     const confirmed = normalizeEmail(body.email);
@@ -248,7 +249,7 @@ export function createApp(deps) {
     if (!target.ok) return json(400, { error: 'Enter a public website address, like example.com.' });
 
     const pro = store.isPro(user, now());
-    const ipHash = await hash(`ip:${ip}`);
+    const ipHash = await hash(`ip:${clientKey(ip)}`);
     // Limits on the person asking come first. The limits shared with other
     // people (per site, whole app per day) are counted further down, only for
     // audits that will really run, so refused requests cannot use them up.
@@ -272,7 +273,10 @@ export function createApp(deps) {
       refund = () => store.refundRun(user);
     } else {
       if (user.free_used) return json(402, { error: 'Your free audit is used. Get 20 audits a month for $5.', upgrade: true });
-      const freeIp = await limit(`free-ip:${ipHash}`, L.freePerIp, DAY, 'Too many free audits from your connection today.');
+      if (isDisposableEmail(user.email)) return json(402, { error: 'The free audit needs a permanent email address. Get 20 audits a month for $5.', upgrade: true });
+      const freeIp =
+        (await limit(`free-ip:${ipHash}`, L.freePerIp, DAY, 'Too many free audits from your connection today.')) ||
+        (await limit(`free-ip-week:${ipHash}`, L.freePerIpWeek, 7 * DAY, 'Too many free audits from your connection this week.'));
       if (freeIp) return freeIp;
       const emailKey = await hash(`free:${freeKeyFor(user.email)}`);
       if (!(await store.claimFree(user, emailKey, now()))) {

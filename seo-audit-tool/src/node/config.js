@@ -52,7 +52,7 @@ export function buildLocalApp(env = process.env, { port = 8787, overrides = {} }
     auditDeps: overrides.auditDeps || auditDeps,
     mailer,
     stripe: overrides.stripe ?? stripe,
-    verifyHuman: config.turnstileSecret ? turnstileVerifier(config.turnstileSecret) : undefined,
+    verifyHuman: config.turnstileSecret ? turnstileVerifier(config.turnstileSecret, undefined, { hostname: new URL(config.appOrigin).hostname }) : undefined,
     log: (...a) => console.error('[app]', ...a),
   });
   return { app, config, db, net, jev, mailer };

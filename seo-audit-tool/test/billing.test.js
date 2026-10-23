@@ -74,14 +74,14 @@ test('billing is off without keys, and live keys are refused', async () => {
   assert.equal((await c.post('/api/billing/checkout')).status, 503);
   assert.equal((await stripeEvent(off, paidInvoice('cus_1', 1))).status, 503);
 
-  const base = { APP_ORIGIN: 'https://a.test', HASH_SALT: 's', STRIPE_PRICE_ID: 'price_1', STRIPE_WEBHOOK_SECRET: 'whsec_1' };
+  const base = { APP_ORIGIN: 'https://a.test', HASH_SALT: 's', TURNSTILE_BYPASS: 'dev', STRIPE_PRICE_ID: 'price_1', STRIPE_WEBHOOK_SECRET: 'whsec_1' };
   const live = readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_live_123' });
   assert.equal(live.billing, null);
   assert.match(live.billingProblem, /live Stripe key refused/);
   assert.equal(readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_live_123', STRIPE_ALLOW_LIVE: 'yes' }).billing.testMode, false);
   assert.equal(readConfig({ ...base, STRIPE_SECRET_KEY: 'rk_test_1' }).billing.testMode, true);
   assert.equal(isTestKey('sk_test_'), true);
-  assert.throws(() => readConfig({ APP_ORIGIN: 'https://a.test' }), /HASH_SALT/);
+  assert.throws(() => readConfig({ APP_ORIGIN: 'https://a.test', TURNSTILE_BYPASS: 'dev' }), /HASH_SALT/);
   assert.throws(() => readConfig({}), /APP_ORIGIN/);
 });
 
