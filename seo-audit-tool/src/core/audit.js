@@ -32,6 +32,9 @@ export const DEFAULT_LIMITS = Object.freeze({
   concurrency: 3,
 });
 
+// robots.txt checks made while picking pages to crawl.
+const MAX_ROBOTS_CHECKS = 50;
+
 // Hard ceilings a caller cannot raise.
 const CEILINGS = { maxPages: 10, maxLinkChecks: 40, maxExternalLinkChecks: 15, maxImageChecks: 20, maxRedirects: 10, auditTimeoutMs: 60_000 };
 
@@ -133,20 +136,26 @@ export async function runAudit(input, deps) {
     }
 
     // Bounded crawl of same-site pages linked from the start page, respecting robots.txt.
+    // Stops looking once it has enough pages, and after a fixed number of
+    // robots.txt checks, since the site writes both the rules and the links.
     const seen = new Set([normalize(main.url), normalize(checked.url)]);
-    const candidates = [];
+    const toCrawl = [];
+    const wanted = Math.max(0, limits.maxPages - 1);
+    let robotsChecks = 0;
     for (const l of page.links) {
+      if (toCrawl.length >= wanted || robotsChecks >= MAX_ROBOTS_CHECKS) break;
       if (!l.internal || !l.abs || !/^https?:/.test(l.abs) || !looksLikePage(l.abs)) continue;
       const u = stripHash(l.abs);
       const key = normalize(u);
       if (seen.has(key)) continue;
       seen.add(key);
-      const path = new URL(u).pathname + new URL(u).search;
-      if (robots.parsed && !isAllowed(robots.parsed, path)) continue;
       if (/nofollow/.test(l.rel)) continue;
-      candidates.push(u);
+      if (robots.parsed) {
+        robotsChecks++;
+        if (!isAllowed(robots.parsed, new URL(u).pathname + new URL(u).search)) continue;
+      }
+      toCrawl.push(u);
     }
-    const toCrawl = candidates.slice(0, Math.max(0, limits.maxPages - 1));
     const crawl = await mapLimit(toCrawl, limits.concurrency, async (u) => {
       const res = await tryGet(u, { maxBytes: limits.maxHtmlBytes });
       if (res.error) return { url: u, status: 0, error: res.error };
