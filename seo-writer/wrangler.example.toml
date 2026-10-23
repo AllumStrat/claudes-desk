@@ -10,3 +10,5 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # Optional per-step effort override, as JSON:
 # WRITER_EFFORT = '{"draft":"high"}'
+# Model, if not Sonnet 5.5:
+# WRITER_MODEL = "claude-haiku-5-5"

@@ -40,9 +40,9 @@ export async function handle(request, env, deps = {}) {
   }
   let config;
   try {
-    config = resolveConfig(env.WRITER_EFFORT ? { effort: JSON.parse(env.WRITER_EFFORT) } : {});
+    config = resolveConfig({ ...(env.WRITER_EFFORT ? { effort: JSON.parse(env.WRITER_EFFORT) } : {}), ...(env.WRITER_MODEL ? { model: env.WRITER_MODEL } : {}) });
   } catch {
-    return json(503, { error: 'WRITER_EFFORT is not valid JSON.' });
+    return json(503, { error: 'WRITER_EFFORT or WRITER_MODEL is not valid.' });
   }
   const fetchImpl = (u, init) => fetch(u, init);
   const llm = deps.llm || createClaude({ config, apiKey: env.ANTHROPIC_API_KEY, fetch: fetchImpl });

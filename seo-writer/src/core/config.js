@@ -4,11 +4,18 @@
 
 export const MODEL = 'claude-sonnet-5-5';
 
-// Dollars per million tokens for MODEL. Cache writes use the 5-minute TTL
-// (1.25x input); cache reads are 0.1x input.
+// The models the writer has prices for. Pick one with config.model
+// (--model on the CLI, WRITER_MODEL on the Worker).
+// Dollars per million tokens. Cache writes use the 5-minute TTL (1.25x
+// input); cache reads are 0.1x input. Haiku 5.5's rates are for prompts of
+// 100K tokens or fewer, which every writer call is.
 export const PRICING = {
   'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
 };
+
+// Models the server-side refusal fallback works on. Haiku 5.5 has none.
+export const FALLBACK_MODELS = new Set(['claude-sonnet-5-5']);
 
 export const DEFAULTS = {
   model: MODEL,
@@ -37,6 +44,8 @@ export const DEFAULTS = {
 };
 
 export function resolveConfig(overrides = {}) {
+  const model = overrides.model || DEFAULTS.model;
+  if (!PRICING[model]) throw new Error(`Unknown model '${model}'. Use one of: ${Object.keys(PRICING).join(', ')}.`);
   return {
     ...DEFAULTS,
     ...overrides,

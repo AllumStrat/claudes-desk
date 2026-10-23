@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Write one page from a brief:
-//   npm run write -- brief.json [--out dir] [--live] [--effort draft=high] [--no-fallbacks]
+//   npm run write -- brief.json [--out dir] [--model id] [--live] [--effort draft=high] [--no-fallbacks]
 // Needs ANTHROPIC_API_KEY in the environment. Writes the copy doc and a
 // usage log to the out folder and prints the check report and cost.
 
@@ -18,6 +18,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     out: { type: 'string', default: 'out' },
+    model: { type: 'string' },
     live: { type: 'boolean', default: false },
     offline: { type: 'boolean', default: false },
     effort: { type: 'string', multiple: true, default: [] },
@@ -28,7 +29,8 @@ const { values, positionals } = parseArgs({
 });
 
 if (values.help || positionals.length !== 1) {
-  console.log(`Usage: npm run write -- brief.json [--out dir] [--live] [--offline]
+  console.log(`Usage: npm run write -- brief.json [--out dir] [--model id] [--live] [--offline]
+  --model id           claude-sonnet-5-5 (default) or claude-haiku-5-5
   --live               also check that every link in the copy loads (check.py --live)
   --offline            no network: no sitemap, sibling or source checks (and no external links)
   --effort step=level  per-step effort, e.g. --effort draft=high (plan, draft, edit, fix, sources)
@@ -46,6 +48,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
 const effort = Object.fromEntries(values.effort.map((e) => e.split('=')));
 const config = resolveConfig({
   effort,
+  ...(values.model ? { model: values.model } : {}),
   ...(values['max-fix-rounds'] ? { maxFixRounds: Number(values['max-fix-rounds']) } : {}),
   ...(values['no-fallbacks'] ? { fallbacks: false } : {}),
 });

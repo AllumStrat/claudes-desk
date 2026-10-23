@@ -16,11 +16,14 @@ It prints the check report, the status and what the page cost, and saves `out/[c
 
 | Flag | What it does |
 | --- | --- |
+| `--model id` | `claude-sonnet-5-5` (default) or `claude-haiku-5-5` |
 | `--live` | also check that every link in the copy loads (`check.py --live`) |
 | `--offline` | no network: no sitemap, sibling or source checks, so no external links |
 | `--effort step=level` | per-step effort (`plan`, `sources`, `draft`, `edit`, `fix`); see Cost |
 | `--max-fix-rounds n` | check-and-fix rounds before giving up (default 3) |
 | `--no-fallbacks` | turn off the server-side refusal fallback |
+
+`npm run compare -- examples/brief.example.json` writes the same page on Sonnet 5.5 and Haiku 5.5, one after the other, and saves both copy docs plus `comparison.md` (result, fix rounds, words, open FAILs and WARNs, `[CONFIRM]` tags, tokens, cost, time). `--max-spend 2` (the default) stops it from starting another model once that many dollars are spent.
 
 `npm run check -- draft.md [--live] [sibling.md https://site/page/ ...]` runs the `check.py` port on its own, on any draft in the skill's format.
 
@@ -85,7 +88,9 @@ Sonnet 5.5 costs $2 per million input tokens and $10 per million output tokens; 
 | each fix round (0 to 3) | ~15k from cache, ~3k new | ~4k | ~$0.05 |
 | source replacement (only when sources fail) | ~14k from cache | ~1.5k | ~$0.02 |
 
-That is about **25 to 30 cents a page** with one fix round, and about 45 cents in a bad case (a source retry and three fix rounds). Output tokens, mostly thinking, are about three quarters of it. Every run logs its real per-call tokens and cost, so the first few real pages replace this estimate. Raising effort to `high` on the draft makes better copy likely but costs more and breaks the cache for that call.
+On Haiku 5.5 ($0.10 in, $0.50 out per million tokens, no server-side fallback) the same calls cost about a twentieth as much, roughly 1 to 2 cents a page, before any extra fix rounds it needs. `npm run compare` measures both on one brief.
+
+On Sonnet that is about **25 to 30 cents a page** with one fix round, and about 45 cents in a bad case (a source retry and three fix rounds). Output tokens, mostly thinking, are about three quarters of it. Every run logs its real per-call tokens and cost, so the first few real pages replace this estimate. Raising effort to `high` on the draft makes better copy likely but costs more and breaks the cache for that call.
 
 ## The Worker
 

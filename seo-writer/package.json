@@ -9,6 +9,7 @@
   },
   "scripts": {
     "write": "node src/node/cli.js",
+    "compare": "node src/node/compare-cli.js",
     "check": "node src/node/check-cli.js",
     "sync-skill": "node scripts/sync-skill.js",
     "test": "node --test test/*.test.js"

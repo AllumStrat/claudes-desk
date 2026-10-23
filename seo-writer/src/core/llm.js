@@ -6,6 +6,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { RESPONSE_SCHEMA } from './prompts.js';
+import { FALLBACK_MODELS } from './config.js';
 
 export class LlmError extends Error {
   constructor(code, message, details = {}) {
@@ -44,7 +45,7 @@ export function buildRequest({ system, blocks, effort, config, schema = RESPONSE
       },
     ],
   };
-  if (config.fallbacks) {
+  if (config.fallbacks && FALLBACK_MODELS.has(config.model)) {
     params.betas = ['server-side-fallback-2026-07-01'];
     params.fallbacks = 'default';
   }
