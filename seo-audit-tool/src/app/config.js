@@ -51,6 +51,7 @@ export function readConfig(env = {}, defaults = {}) {
       dailyCap: num(env.DAILY_AUDIT_CAP, 1000), // whole app, per day
       signinPerEmail: num(env.SIGNIN_PER_EMAIL, 3), // per 15 minutes
       signinPerIp: num(env.SIGNIN_PER_IP, 10), // per hour
+      watchChangesPerDay: num(env.WATCH_CHANGES_PER_DAY, 5), // per account
       maxConcurrent: num(env.AUDIT_MAX_CONCURRENT, 2),
     },
     watch: { batch: num(env.WATCH_BATCH, 10), everyDays: 7 },

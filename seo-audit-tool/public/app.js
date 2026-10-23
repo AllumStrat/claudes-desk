@@ -326,7 +326,8 @@ if (new URLSearchParams(location.search).get('paid') === '1') {
 $('watch-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const { ok, data } = await api('/api/watch', { url: $('watch-url').value.trim() });
-  $('watch-status').textContent = ok ? (data.watchUrl ? `Checking ${data.watchUrl} every week.` : 'No site saved.') : message(data, 'Could not save.');
+  const later = ok && data.nextCheckAt > Date.now() + 3_600_000 ? ` First check on ${new Date(data.nextCheckAt).toISOString().slice(0, 10)}.` : '';
+  $('watch-status').textContent = ok ? (data.watchUrl ? `Checking ${data.watchUrl} every week.${later}` : 'No site saved.') : message(data, 'Could not save.');
 });
 
 $('watch-clear').addEventListener('click', async () => {

@@ -57,6 +57,50 @@ test('saving a site checks it on the next hourly run, then weekly, emailing only
   assert.deepEqual(await ctx.app.scheduled(), []);
 });
 
+test('changing the saved site does not buy extra audits', async () => {
+  const ctx = makeApp({ routes: { 'https://ok.example.com/': GOOD_SITE, 'https://other.example.com/': GOOD_SITE, 'https://third.example.com/': GOOD_SITE } });
+  const { c, user } = await proUser(ctx);
+  await c.post('/api/watch', { url: 'ok.example.com' });
+  assert.deepEqual(await ctx.app.scheduled(), ['checked']);
+  // A new site right after a check waits for the usual weekly slot.
+  ctx.time.t += 3_600_000;
+  const moved = await c.post('/api/watch', { url: 'other.example.com' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.data.nextCheckAt, ctx.time.t - 3_600_000 + 7 * DAY);
+  assert.deepEqual(await ctx.app.scheduled(), []);
+  // Saving the same site again changes nothing; changes are limited per day.
+  assert.equal((await c.post('/api/watch', { url: 'other.example.com' })).data.nextCheckAt, undefined);
+  const statuses = [];
+  for (const url of ['third.example.com', 'ok.example.com', 'third.example.com', 'ok.example.com', 'third.example.com']) statuses.push((await c.post('/api/watch', { url })).status);
+  // 5 changes a day (the first save counted); the last one is the site
+  // already saved, so it is a no-op.
+  assert.deepEqual(statuses, [200, 200, 200, 429, 200]);
+  // Clearing and saving again keeps the weekly slot too.
+  await c.post('/api/watch', { url: null });
+  ctx.time.t += DAY;
+  assert.equal((await c.post('/api/watch', { url: 'other.example.com' })).status, 200);
+  assert.deepEqual(await ctx.app.scheduled(), []);
+  ctx.time.t += 6 * DAY;
+  assert.deepEqual(await ctx.app.scheduled(), ['checked']);
+  assert.equal((await ctx.store.getUser(user.id)).watch_url, 'https://other.example.com/');
+});
+
+test('weekly checks obey the off switch and the shared limits', async () => {
+  const ctx = makeApp({ env: { DAILY_AUDIT_CAP: '2' } });
+  const { c, user } = await proUser(ctx);
+  await c.post('/api/watch', { url: 'ok.example.com' });
+  ctx.config.auditsEnabled = false;
+  assert.deepEqual(await ctx.app.scheduled(), []);
+  ctx.config.auditsEnabled = true;
+  assert.equal((await c.post('/api/audit', { url: 'other.example.com' })).status, 200);
+  assert.equal((await c.post('/api/audit', { url: 'other.example.com' })).status, 200);
+  // The daily cap is full, so the weekly check waits a few hours.
+  assert.deepEqual(await ctx.app.scheduled(), ['postponed']);
+  assert.equal((await ctx.store.getUser(user.id)).watch_next_at, ctx.time.t + 6 * 3_600_000);
+  ctx.time.t += DAY;
+  assert.deepEqual(await ctx.app.scheduled(), ['checked']);
+});
+
 test('a failed weekly check tries again the next day', async () => {
   const ctx = makeApp({ routes: { 'https://ok.example.com/': () => { throw new TypeError('down'); } } });
   const { c, user } = await proUser(ctx);

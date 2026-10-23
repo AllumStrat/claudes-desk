@@ -121,6 +121,10 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
     async setWatch(userId, url, nextAt) {
       await run('UPDATE users SET watch_url = ?, watch_next_at = ? WHERE id = ?', url, url ? nextAt : null, userId);
     },
+    async lastWeeklyAt(userId) {
+      const row = await one("SELECT MAX(created_at) AS at FROM audits WHERE user_id = ? AND kind = 'weekly'", userId);
+      return row?.at ?? null;
+    },
     async dueWatches(now, limit) {
       return all('SELECT * FROM users WHERE watch_url IS NOT NULL AND watch_next_at <= ? ORDER BY watch_next_at LIMIT ?', now, limit);
     },

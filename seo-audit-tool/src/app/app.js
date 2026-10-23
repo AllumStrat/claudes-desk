@@ -124,6 +124,16 @@ export function createApp(deps) {
     return { body };
   }
 
+  // Limits every audit counts against, manual or weekly: audits of one site
+  // per hour from anyone, and the whole app per day.
+  const siteKey = (hostname) => hostname.replace(/^www\./, '');
+  async function sharedLimits(hostname) {
+    return (
+      (await limit(`audit-target:${siteKey(hostname)}`, L.auditPerTarget, HOUR, 'That site has been audited a lot recently. Try again later.')) ||
+      (await limit('audit-day', L.dailyCap, DAY, 'The audit tool is at its daily limit. Try again tomorrow.'))
+    );
+  }
+
   async function humanCheck(body, ip) {
     if (!deps.verifyHuman) return null;
     const token = typeof body.turnstileToken === 'string' ? body.turnstileToken.slice(0, 2048) : '';
@@ -213,12 +223,13 @@ export function createApp(deps) {
 
     const pro = store.isPro(user, now());
     const ipHash = await hash(`ip:${ip}`);
+    // Limits on the person asking come first. The limits shared with other
+    // people (per site, whole app per day) are counted further down, only for
+    // audits that will really run, so refused requests cannot use them up.
     const limited =
       (await bindingLimit(ip)) ||
       (await limit(`audit-ip:${ipHash}`, L.auditPerIp, 10 * MIN, 'Too many audits from your connection. Try again in a few minutes.')) ||
       (await limit(`audit-user:${user.id}`, L.auditPerAccount, HOUR, 'You have run a lot of audits in the last hour. Try again later.')) ||
-      (await limit(`audit-target:${target.hostname.replace(/^www\./, '')}`, L.auditPerTarget, HOUR, 'That site has been audited a lot recently. Try again later.')) ||
-      (await limit('audit-day', L.dailyCap, DAY, 'The audit tool is at its daily limit. Try again tomorrow.')) ||
       (pro ? null : await humanCheck(body, ip));
     if (limited) return limited;
 
@@ -243,6 +254,12 @@ export function createApp(deps) {
         return json(402, { error: 'A free audit was already used with this email address. Get 20 audits a month for $5.', upgrade: true });
       }
       refund = () => store.refundFree(user, emailKey);
+    }
+
+    const shared = await sharedLimits(target.hostname);
+    if (shared) {
+      await refund();
+      return shared;
     }
 
     if (!gate.tryEnter()) {
@@ -307,8 +324,16 @@ export function createApp(deps) {
     if (typeof body.url !== 'string' || body.url.length > MAX_URL_LENGTH) return json(400, { error: 'Send a "url" string.' });
     const target = checkUrl(body.url, { allowBareHost: true });
     if (!target.ok) return json(400, { error: 'Enter a public website address, like example.com.' });
-    await store.setWatch(user.id, target.url, now());
-    return json(200, { ok: true, watchUrl: target.url });
+    if (target.url === user.watch_url) return json(200, { ok: true, watchUrl: target.url });
+    const limited = await limit(`watch:${user.id}`, L.watchChangesPerDay, DAY, 'You have changed the saved site a lot today. Try again tomorrow.');
+    if (limited) return limited;
+    // A new site is checked at the next hourly run only if no weekly check
+    // ran in the last week; otherwise it waits for the usual weekly slot, so
+    // changing the saved site cannot buy extra audits.
+    const last = await store.lastWeeklyAt(user.id);
+    const nextAt = Math.max(now(), last ? last + config.watch.everyDays * DAY : 0);
+    await store.setWatch(user.id, target.url, nextAt);
+    return json(200, { ok: true, watchUrl: target.url, nextCheckAt: nextAt });
   }
 
   async function checkout(request) {
@@ -424,7 +449,8 @@ export function createApp(deps) {
   // Hourly: weekly re-checks that are due, then housekeeping.
   async function scheduled() {
     const t = now();
-    const due = await store.dueWatches(t, config.watch.batch);
+    // Paused: due checks stay due and run once audits are switched back on.
+    const due = config.auditsEnabled ? await store.dueWatches(t, config.watch.batch) : [];
     const results = await mapLimit(due, 2, async (user) => {
       if (!store.isPro(user, t)) {
         await store.setWatch(user.id, null, null);
@@ -432,6 +458,12 @@ export function createApp(deps) {
       }
       if (!(await store.claimWatch(user.id, user.watch_next_at, t + config.watch.everyDays * DAY))) return 'taken';
       const url = user.watch_url;
+      // Weekly checks count against the same per-site and daily limits as
+      // manual audits. When one is full, try again in a few hours.
+      if (await sharedLimits(new URL(url).hostname)) {
+        await store.setWatch(user.id, url, t + 6 * HOUR);
+        return 'postponed';
+      }
       try {
         const before = await store.lastAuditFor(user.id, url);
         const report = await runAudit(url, deps.auditDeps());

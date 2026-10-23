@@ -215,6 +215,19 @@ test('per-account, per-site and daily limits', async () => {
   assert.equal((await b.get('/api/me')).data.user.freeUsed, false);
 });
 
+test('refused audits do not count toward the daily cap or the per-site limit', async () => {
+  const ctx = makeApp({ verifyHuman: async (t) => t === 'human', env: { AUDIT_RATE_LIMIT: '100', AUDITS_PER_HOUR_ACCOUNT: '100' } });
+  const c = client(ctx);
+  await c.post('/api/auth/start', { email: 'a@example.com', turnstileToken: 'human' });
+  await c.post('/api/auth/verify', { token: ctx.mailer.sent[0].text.match(/#signin=(\S+)/)[1] });
+  assert.equal((await c.post('/api/audit', { url: 'ok.example.com', turnstileToken: 'human' })).status, 200);
+  for (let i = 0; i < 5; i++) assert.equal((await c.post('/api/audit', { url: 'ok.example.com' })).status, 403); // no human check
+  for (let i = 0; i < 5; i++) assert.equal((await c.post('/api/audit', { url: 'ok.example.com', turnstileToken: 'human' })).status, 402); // free audit used
+  const count = async (key) => (await ctx.db.prepare('SELECT SUM(count) AS n FROM counters WHERE key = ?').bind(key).first()).n;
+  assert.equal(await count('audit-day'), 1);
+  assert.equal(await count('audit-target:ok.example.com'), 1);
+});
+
 test('the off switch pauses audits', async () => {
   const ctx = makeApp({ env: { AUDITS_ENABLED: '0' } });
   const c = client(ctx);
