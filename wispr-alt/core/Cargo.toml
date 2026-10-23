@@ -1,0 +1,38 @@
+[package]
+name = "dictate-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent core of Dictate: audio prep, local Whisper, cleanup, word list, history, settings."
+
+[features]
+default = ["whisper"]
+# Local transcription through whisper.cpp. On by default; turn it off to build
+# the rest of the crate on a machine without a C/C++ toolchain.
+whisper = ["dep:whisper-rs"]
+# Apple GPU acceleration. The Mac app turns this on.
+metal = ["whisper", "whisper-rs/metal"]
+
+[dependencies]
+anyhow = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
+hound = "3.5"
+whisper-rs = { version = "0.16", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+# No native store off macOS: keyring falls back to an in-memory mock, which is
+# only used by tests.
+keyring = "3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "dictate-cli"
+path = "src/bin/dictate-cli.rs"

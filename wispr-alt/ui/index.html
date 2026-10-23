@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dictate</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Dictate</h1>
+      <p id="hint" class="muted">Loading…</p>
+    </div>
+    <span id="phase" class="pill">…</span>
+  </header>
+
+  <div id="notice" class="notice" hidden>
+    <span id="notice-text"></span>
+    <button id="notice-close" class="link" title="Dismiss">Dismiss</button>
+  </div>
+
+  <nav>
+    <button data-tab="setup" class="active">Setup</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="words">Words</button>
+    <button data-tab="history">History</button>
+  </nav>
+
+  <!-- Setup -->
+  <section id="tab-setup" class="tab">
+    <div class="card">
+      <h2><span id="step-model" class="step">1</span> Speech model</h2>
+      <p class="muted">Transcription runs on this Mac. The model downloads once.</p>
+      <div class="row">
+        <select id="model"></select>
+        <button id="download">Download</button>
+        <button id="cancel-download" hidden>Cancel</button>
+      </div>
+      <progress id="progress" max="100" value="0" hidden></progress>
+      <p id="model-status" class="muted small"></p>
+    </div>
+
+    <div class="card">
+      <h2><span id="step-mic" class="step">2</span> Microphone</h2>
+      <p class="muted">The first test makes macOS ask for microphone access. Click Allow.</p>
+      <div class="row">
+        <button id="test-mic">Test microphone</button>
+        <button id="open-mic" class="secondary">Open Microphone settings</button>
+      </div>
+      <p id="mic-status" class="muted small"></p>
+    </div>
+
+    <div class="card">
+      <h2><span id="step-ax" class="step">3</span> Paste permission</h2>
+      <p class="muted">To paste into other apps, Dictate needs Accessibility access. Without it, text is copied to the clipboard instead.</p>
+      <div class="row">
+        <button id="allow-ax">Allow paste</button>
+        <button id="recheck" class="secondary">Check again</button>
+      </div>
+      <p id="ax-status" class="muted small"></p>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">4</span> Try it</h2>
+      <p class="muted">Click in the box, then <span class="hotkey-label"></span>.</p>
+      <textarea id="try" rows="3" placeholder="Your words will appear here"></textarea>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section id="tab-settings" class="tab" hidden>
+    <div class="card">
+      <h2>Hotkey</h2>
+      <div class="row">
+        <input id="hotkey" readonly />
+        <button id="record-hotkey">Change</button>
+      </div>
+      <p class="muted small">Use a modifier with a key, like ⌥Space or ⌃⌥D. The Fn key on its own isn't supported.</p>
+      <div class="row">
+        <label><input type="radio" name="mode" value="hold" /> Hold to talk</label>
+        <label><input type="radio" name="mode" value="toggle" /> Press to start, press again to stop</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Transcription</h2>
+      <label class="field">Language
+        <select id="language">
+          <option value="en">English</option>
+          <option value="auto">Detect automatically</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="pt">Portuguese</option>
+          <option value="it">Italian</option>
+        </select>
+      </label>
+      <label class="field">Microphone
+        <select id="microphone"></select>
+      </label>
+      <label class="check"><input type="checkbox" id="remove_fillers" /> Remove “um” and “uh”</label>
+      <label class="check"><input type="checkbox" id="restore_clipboard" /> Put my clipboard back after pasting</label>
+      <label class="check"><input type="checkbox" id="sounds" /> Play a sound when recording starts and stops</label>
+    </div>
+
+    <div class="card">
+      <h2>AI cleanup <span class="muted small">(optional, free tier)</span></h2>
+      <p class="muted small">Fixes punctuation, false starts and “no wait, I mean…”. Your speech never leaves the Mac; only the text is sent, and only when this is on.</p>
+      <label class="field">Service
+        <select id="cleanup">
+          <option value="off">Off</option>
+          <option value="groq">Groq</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </label>
+      <div id="cleanup-config" hidden>
+        <label class="field">API key
+          <span class="row">
+            <input id="api-key" type="password" placeholder="Paste your key" autocomplete="off" />
+            <button id="save-key">Save key</button>
+          </span>
+        </label>
+        <p class="small"><span id="key-status" class="muted"></span> <button id="get-key" class="link">Get a free key</button></p>
+        <label class="field">Model
+          <input id="cleanup-model" />
+        </label>
+        <div class="row">
+          <button id="test-cleanup" class="secondary">Test cleanup</button>
+        </div>
+        <p id="cleanup-result" class="small"></p>
+      </div>
+    </div>
+    <p id="saved" class="muted small"></p>
+  </section>
+
+  <!-- Words -->
+  <section id="tab-words" class="tab" hidden>
+    <div class="card">
+      <h2>Your words</h2>
+      <p class="muted small">One per line. A name on its own teaches the spelling. Use an arrow to fix something Whisper keeps mishearing, like <code>floor jack -&gt; Floorjack</code>.</p>
+      <textarea id="words" rows="14" spellcheck="false"></textarea>
+      <div class="row"><button id="save-words">Save words</button> <span id="words-saved" class="muted small"></span></div>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section id="tab-history" class="tab" hidden>
+    <div class="row spread">
+      <p class="muted small">Your recent dictations stay on this Mac.</p>
+      <button id="clear-history" class="secondary">Clear</button>
+    </div>
+    <ul id="history"></ul>
+  </section>
+
+  <footer class="muted small" id="footer"></footer>
+  <script src="app.js"></script>
+</body>
+</html>
