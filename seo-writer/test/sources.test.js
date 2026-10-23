@@ -44,3 +44,12 @@ test('duplicates collapse and max is respected', async () => {
   assert.equal(r.verified.length, 3);
   assert.equal(new Set(r.verified.map((v) => v.url)).size, 3);
 });
+
+test('pages are read up to 500 KB, not the whole response', async () => {
+  const { createNet, PAGE_MAX_BYTES } = await import('../src/core/net.js');
+  const big = 'x'.repeat(2_000_000);
+  const net = createNet({ fetchImpl: async () => new Response(big, { status: 200, headers: { 'content-type': 'text/html' } }), resolveHost: async () => ['93.184.216.34'] });
+  const r = await net.fetchPage('https://www.nhtsa.gov/big');
+  assert.equal(PAGE_MAX_BYTES, 500_000);
+  assert.equal(r.body.length, PAGE_MAX_BYTES);
+});

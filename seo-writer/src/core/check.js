@@ -77,9 +77,9 @@ export function words(text) {
 
 export function stripMd(text) {
   text = text.replace(/```[\s\S]*?```/g, ' ');
-  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
-  text = text.replace(new RegExp(LINK_SRC, 'g'), (_, a) => a);
-  text = text.replace(/<[^>]+>/g, ' ');
+  text = replaceSpans(text, findImages(text), () => ' ');
+  text = replaceSpans(text, findLinks(text), (l) => l.anchor);
+  text = stripTags(text);
   text = text.replace(/[*_`>|#]/g, ' ');
   return text;
 }
@@ -153,10 +153,184 @@ export function htmlUnescape(s) {
 }
 
 export function htmlMainText(raw) {
-  raw = raw.replace(/<(script|style|noscript|svg|header|footer|nav)\b[\s\S]*?<\/\1>/gi, ' ');
-  const m = /<main\b[\s\S]*?<\/main>/i.exec(raw);
-  if (m) raw = m[0];
-  return htmlUnescape(raw.replace(/<[^>]+>/g, ' '));
+  raw = dropBlocks(raw);
+  const m = mainBlock(raw);
+  if (m != null) raw = m;
+  return htmlUnescape(stripTags(raw));
+}
+
+// ---------- linear scanners ----------
+// check.py does these steps with regexes: LINK, the image and tag patterns
+// in strip_md, and the two in html_main_text. On hostile input (thousands of
+// '[', '<' or '<script' with nothing to close them) those regexes backtrack
+// and take seconds per 100 KB, and a fetched page is hostile input. These
+// scans give the same matches in one pass; test/linear.test.js checks them
+// against the regexes on random input.
+
+const SPACE = /\s/;
+const isSpace = (c) => c !== undefined && SPACE.test(c);
+const URL_STOP = (c) => c === ')' || c === '>' || SPACE.test(c);
+
+/** Inline Markdown links, matched as LINK_SRC matches them: [{ start, end, anchor, url }]. */
+export function findLinks(s) {
+  const out = [];
+  const tails = new Map(); // ']' position -> what follows it, which no '[' changes
+  const ends = new Map(); // end of a URL -> where the link closes, or null
+  let urlStop = -1;
+  let quote = -1;
+  const nextQuote = (from) => {
+    if (quote !== -2 && quote < from) {
+      const q = s.indexOf('"', from);
+      quote = q === -1 ? -2 : q;
+    }
+    return quote === -2 ? -1 : quote;
+  };
+  // From the end of the URL: >? (\s+"[^"]*")? \s* \)
+  const close = (e) => {
+    if (ends.has(e)) return ends.get(e);
+    let t = s[e] === '>' ? e + 1 : e;
+    let r;
+    let u = t;
+    while (isSpace(s[u])) u++;
+    if (u > t && s[u] === '"') {
+      const q = nextQuote(u + 1);
+      if (q >= 0) {
+        let v = q + 1;
+        while (isSpace(s[v])) v++;
+        r = s[v] === ')' ? v + 1 : null;
+        ends.set(e, r);
+        return r;
+      }
+    }
+    while (isSpace(s[t])) t++;
+    r = s[t] === ')' ? t + 1 : null;
+    ends.set(e, r);
+    return r;
+  };
+  const url = (q) => {
+    if (urlStop < q) {
+      urlStop = q;
+      while (urlStop < s.length && !URL_STOP(s[urlStop])) urlStop++;
+    }
+    if (urlStop === q) return null;
+    const end = close(urlStop);
+    return end == null ? null : { url: s.slice(q, urlStop), end };
+  };
+  // From the ']': \(\s*<?([^)\s>]+)
+  const tail = (k) => {
+    if (tails.has(k)) return tails.get(k);
+    let r = null;
+    if (s[k + 1] === '(') {
+      let p = k + 2;
+      while (isSpace(s[p])) p++;
+      r = s[p] === '<' ? url(p + 1) || url(p) : url(p);
+    }
+    tails.set(k, r);
+    return r;
+  };
+  let k = -1;
+  let i = s.indexOf('[');
+  while (i !== -1) {
+    if (k <= i) k = s.indexOf(']', i + 1);
+    if (k === -1) break;
+    if (k === i + 1 || s[i - 1] === '!') {
+      i = s.indexOf('[', i + 1);
+      continue;
+    }
+    const t = tail(k);
+    if (!t) {
+      // every '[' before k closes at k too, so none of them can match
+      i = s.indexOf('[', k + 1);
+      continue;
+    }
+    out.push({ start: i, end: t.end, anchor: s.slice(i + 1, k), url: t.url });
+    i = s.indexOf('[', t.end);
+  }
+  return out;
+}
+
+/** Markdown images, matched as /!\[[^\]]*\]\([^)]*\)/g matches them: [{ start, end }]. */
+export function findImages(s) {
+  const out = [];
+  let k = -1;
+  let j = -1;
+  let i = s.indexOf('![');
+  while (i !== -1) {
+    if (k <= i) k = s.indexOf(']', i + 2);
+    if (k === -1) break;
+    if (s[k + 1] !== '(') {
+      i = s.indexOf('![', k + 1);
+      continue;
+    }
+    if (j <= k + 1) j = s.indexOf(')', k + 2);
+    if (j === -1) break;
+    out.push({ start: i, end: j + 1 });
+    i = s.indexOf('![', j + 1);
+  }
+  return out;
+}
+
+function replaceSpans(s, spans, fn) {
+  if (!spans.length) return s;
+  let out = '';
+  let last = 0;
+  for (const sp of spans) {
+    out += s.slice(last, sp.start) + fn(sp);
+    last = sp.end;
+  }
+  return out + s.slice(last);
+}
+
+/** s.replace(/<[^>]+>/g, ' '), in one pass. */
+export function stripTags(s) {
+  let out = '';
+  let last = 0;
+  let i = s.indexOf('<');
+  while (i !== -1) {
+    const j = s.indexOf('>', i + 1);
+    if (j === -1) break;
+    if (j === i + 1) {
+      i = s.indexOf('<', i + 1);
+      continue;
+    }
+    out += s.slice(last, i) + ' ';
+    last = j + 1;
+    i = s.indexOf('<', last);
+  }
+  return out + s.slice(last);
+}
+
+/** raw.replace(/<(script|style|noscript|svg|header|footer|nav)\b[\s\S]*?<\/\1>/gi, ' '), in one pass. */
+function dropBlocks(raw) {
+  const open = /<(script|style|noscript|svg|header|footer|nav)\b/gi;
+  const unclosed = new Set(); // no closing tag anywhere after this point
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = open.exec(raw))) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const shut = new RegExp(`</${name}>`, 'gi');
+    shut.lastIndex = m.index + m[0].length;
+    const c = shut.exec(raw);
+    if (!c) {
+      unclosed.add(name);
+      continue;
+    }
+    out += raw.slice(last, m.index) + ' ';
+    last = open.lastIndex = c.index + c[0].length;
+  }
+  return out + raw.slice(last);
+}
+
+/** The first /<main\b[\s\S]*?<\/main>/i match, or null. */
+function mainBlock(raw) {
+  const open = /<main\b/i.exec(raw);
+  if (!open) return null;
+  const shut = /<\/main>/gi;
+  shut.lastIndex = open.index + open[0].length;
+  const c = shut.exec(raw);
+  return c ? raw.slice(open.index, c.index + c[0].length) : null;
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
@@ -400,7 +574,7 @@ export async function checkDraft(draft, { params: P, banned = null, status = nul
   }
 
   // ---- links
-  const links = [...afterH1.matchAll(new RegExp(LINK_SRC, 'g'))].map((m) => [m[1].trim(), m[2].trim()]);
+  const links = findLinks(afterH1).map((l) => [l.anchor.trim(), l.url.trim()]);
   const internal = [];
   const external = [];
   for (const [anc, url] of links) {

@@ -8,18 +8,23 @@ import { safeFetch } from './safe-fetch.js';
 export const WRITER_USER_AGENT = 'AllumSEOWriter/0.1 (+https://allumstrategies.com; link and source check)';
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
+// A source check needs the quoted line, not a whole site: 500 KB holds any
+// real article and keeps a hostile page from costing much to read.
+export const PAGE_MAX_BYTES = 500_000;
+
 /**
  * @param {object} o
  * @param {typeof fetch} o.fetchImpl
  * @param {(host:string)=>Promise<string[]>} o.resolveHost
  * @param {string} [o.userAgent]
+ * @param {number} [o.maxBytes]   body cap for pages (sources, siblings, sitemaps)
  */
-export function createNet({ fetchImpl, resolveHost, userAgent = WRITER_USER_AGENT }) {
+export function createNet({ fetchImpl, resolveHost, userAgent = WRITER_USER_AGENT, maxBytes = PAGE_MAX_BYTES }) {
   const base = { fetchImpl, resolveHost, userAgent, timeoutMs: 10_000 };
   return {
     /** GET a page, following redirects. Resolves to { status, url, body }. */
     async fetchPage(url) {
-      const r = await safeFetch(url, { ...base, maxBytes: 3_000_000 });
+      const r = await safeFetch(url, { ...base, maxBytes });
       return { status: r.status, url: r.url, body: r.body, contentType: r.contentType };
     },
     /** The first hop's status, as check.py --live reports it: [code, location or error]. */
