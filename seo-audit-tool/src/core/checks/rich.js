@@ -65,15 +65,26 @@ const LOCAL_TYPES = new Set(
   ].map((t) => t.toLowerCase()),
 );
 
-export function flattenSchema(blocks) {
+// Typed nodes from the JSON-LD blocks, in document order. A loop with its own
+// stack, not recursion, and it stops descending past maxDepth, so deeply
+// nested arrays cannot overflow the call stack.
+export function flattenSchema(blocks, maxDepth = 32) {
   const nodes = [];
-  const visit = (n) => {
-    if (!n || typeof n !== 'object') return;
-    if (Array.isArray(n)) return n.forEach(visit);
-    if (n['@type']) nodes.push(n);
-    if (Array.isArray(n['@graph'])) n['@graph'].forEach(visit);
+  const stack = [];
+  const pushAll = (list, depth) => {
+    for (let i = list.length - 1; i >= 0; i--) stack.push([list[i], depth]);
   };
-  for (const b of blocks) if (b.ok) visit(b.data);
+  pushAll(blocks.filter((b) => b.ok).map((b) => b.data), 0);
+  while (stack.length) {
+    const [n, depth] = stack.pop();
+    if (!n || typeof n !== 'object' || depth > maxDepth) continue;
+    if (Array.isArray(n)) {
+      pushAll(n, depth + 1);
+      continue;
+    }
+    if (n['@type']) nodes.push(n);
+    if (Array.isArray(n['@graph'])) pushAll(n['@graph'], depth + 1);
+  }
   return nodes;
 }
 

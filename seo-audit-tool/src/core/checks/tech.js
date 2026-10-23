@@ -29,6 +29,18 @@ export function checkPerformance(ctx, r) {
   } else {
     r.add(pass('html-size', C, `HTML size is reasonable (${kb} KB)`));
   }
+  const lim = page.parseLimited;
+  if (lim) {
+    const at = Math.round(lim.atByte / 1024);
+    r.add(
+      issue('html-too-complex', C, 'medium', {
+        issue: lim.reason === 'depth' ? `The HTML is nested more than ${lim.maxDepth} levels deep` : `The HTML has more than ${lim.maxElements.toLocaleString('en-US')} elements`,
+        impact: 'A huge or very deep page structure is slow for browsers to lay out and for crawlers to read. Unclosed tags are the usual cause.',
+        evidence: `The audit stopped reading the HTML after ${at} KB and checked only that part.`,
+        fix: 'Close every tag you open, and remove repeated wrapper elements. Validate the page with the W3C validator.',
+      }),
+    );
+  }
 
   const ttfb = main.timing.ttfbMs;
   if (ttfb > 1500) {
