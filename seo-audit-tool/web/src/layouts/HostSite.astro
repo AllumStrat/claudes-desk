@@ -1,0 +1,508 @@
+---
+/**
+ * A stand-in for the site the audit page will live on.
+ *
+ * It copies allumstrategies.com's tokens, header pill and footer closely
+ * enough to judge the page in place, and nothing more: the menus are plain
+ * links to the live site, with no popovers or drawer. On the real site the
+ * page uses that site's own `Layout.astro` and this file is not copied.
+ *
+ * The `:root` tokens below are the real site's, by the same names, so the
+ * tool component reads the same variables in both places.
+ */
+interface Props {
+  title: string;
+  description: string;
+  /** A preview build should not be indexed. The real site decides for itself. */
+  noindex?: boolean;
+}
+
+const { title, description, noindex = true } = Astro.props;
+const LIVE = "https://allumstrategies.com";
+const phone = { href: "tel:+14805257119", label: "480-525-7119" };
+const nav = [
+  { href: `${LIVE}/services/`, label: "Services" },
+  { href: `${LIVE}/industries/mechanics/`, label: "Who We Help" },
+  { href: `${LIVE}/tools/`, label: "Free Tools", here: true },
+  { href: `${LIVE}/blog/`, label: "Blog" },
+];
+const footerCols = [
+  {
+    title: "What We Do",
+    links: [
+      { href: `${LIVE}/services/seo/`, label: "SEO and AI" },
+      { href: `${LIVE}/services/google-business-profile/`, label: "Google profile" },
+      { href: `${LIVE}/services/website-design/`, label: "Websites" },
+      { href: `${LIVE}/services/`, label: "Everything we do" },
+    ],
+  },
+  {
+    title: "Free Tools",
+    links: [
+      { href: "/tools/seo-audit/", label: "SEO audit" },
+      { href: `${LIVE}/tools/google-business-profile-audit/`, label: "Google profile checkup" },
+      { href: `${LIVE}/tools/localbusiness-schema-generator/`, label: "Schema generator" },
+      { href: `${LIVE}/tools/`, label: "All free tools" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { href: `${LIVE}/blog/`, label: "Blog" },
+      { href: `${LIVE}/floorjack-case-study/`, label: "Floorjack case study" },
+    ],
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/ibm-plex-sans-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="bar">
+        <a class="logo" href={LIVE}>ALLUM<span class="logo-dot" aria-hidden="true">_</span></a>
+        <nav class="main-nav" aria-label="Primary">
+          <ul>
+            {
+              nav.map((n) => (
+                <li>
+                  <a class:list={["nav-link", { here: n.here }]} href={n.href}>
+                    {n.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        <div class="header-actions">
+          <a class="header-tel" href={phone.href}>{phone.label}</a>
+          <a class="hbtn hbtn-light" href={`${LIVE}/#contact`}>Get Found</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <div class="footer-brand">
+          <a class="logo" href={LIVE}>ALLUM<span class="logo-dot" aria-hidden="true">_</span></a>
+          <p class="footer-mission">Make AI recommend you.<br />Phoenix-based, serving businesses everywhere.</p>
+          <div class="footer-contact">
+            <a href={phone.href}>{phone.label}</a>
+            <a href="mailto:Jacob@AllumStrategies.com">Jacob@AllumStrategies.com</a>
+          </div>
+        </div>
+        {
+          footerCols.map((col) => (
+            <nav class="footer-col" aria-label={col.title}>
+              <h2 class="footer-h">{col.title}</h2>
+              <ul>
+                {col.links.map((link) => (
+                  <li>
+                    <a href={link.href}>{link.label}</a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))
+        }
+      </div>
+      <div class="shell footer-base">
+        <p>© 2026 Allum Strategies. You don't pay for the retainer work until you're on page one.</p>
+      </div>
+    </footer>
+
+    <style is:global>
+      @font-face {
+        font-family: "Archivo";
+        font-style: normal;
+        font-weight: 600 800;
+        font-display: swap;
+        src: url("/fonts/archivo-latin-variable.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-style: normal;
+        font-weight: 400 600;
+        font-display: swap;
+        src: url("/fonts/ibm-plex-sans-latin-variable.woff2") format("woff2");
+      }
+
+      /* The host site's tokens, same names and values (its Layout.astro). */
+      :root {
+        --font-display: "Archivo", system-ui, sans-serif;
+        --font-body: "IBM Plex Sans", system-ui, sans-serif;
+        --ink: oklch(0.19 0.022 172.6);
+        --ink-2: oklch(0.34 0.024 172.6);
+        --muted: oklch(0.47 0.021 172.6);
+        --faint: oklch(0.545 0.018 172.6);
+        --line: oklch(0.9 0.011 172.6);
+        --line-soft: oklch(0.948 0.008 172.6);
+        --bg: oklch(0.995 0.002 172.6);
+        --panel: oklch(1 0 0);
+        --wash: oklch(0.973 0.009 172.6);
+        --deep: oklch(0.238 0.047 172.6);
+        --deep-2: oklch(0.196 0.04 172.6);
+        --on-deep: oklch(0.972 0.012 172.6);
+        --on-deep-mut: oklch(0.79 0.024 172.6);
+        --on-deep-faint: oklch(0.67 0.022 172.6);
+        --on-deep-line: oklch(0.42 0.04 172.6);
+        --gold: oklch(0.84 0.13 78);
+        --gold-hi: oklch(0.89 0.11 82);
+        --gold-ink: oklch(0.31 0.062 78);
+        --gold-wash: oklch(0.968 0.035 88);
+        --gold-line: oklch(0.885 0.072 82);
+        --pass: oklch(0.5 0.115 162);
+        --pass-wash: oklch(0.958 0.032 165);
+        --r-panel: 2.5rem;
+        --r-card: 1rem;
+        --r-ctl: 0.5rem;
+        --r-chip: 0.375rem;
+        --r-pill: 100px;
+        --shell: 75rem;
+        --col: 50.5rem;
+        --space-1: 0.5rem;
+        --space-2: 1rem;
+        --space-3: 1.5rem;
+        --space-4: 2.5rem;
+        --space-5: 4rem;
+        --space-6: 6rem;
+        --space-7: 8rem;
+        --z-sticky: 100;
+        --z-dropdown: 200;
+        --head-h: 4.25rem;
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --shadow-sm: 0 1px 2px oklch(0.19 0.022 172.6 / 0.05), 0 2px 6px oklch(0.19 0.022 172.6 / 0.04);
+        --shadow-md: 0 2px 4px oklch(0.19 0.022 172.6 / 0.04), 0 10px 26px -6px oklch(0.19 0.022 172.6 / 0.1);
+        --shadow-lg: 0 4px 8px oklch(0.19 0.022 172.6 / 0.04), 0 28px 60px -20px oklch(0.19 0.022 172.6 / 0.18);
+        --shadow-win: 0 4px 8px oklch(0.19 0.022 172.6 / 0.08), 0 40px 80px -24px oklch(0.15 0.04 172.6 / 0.5);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font-body);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      ::selection {
+        background: var(--gold-wash);
+        color: var(--gold-ink);
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        letter-spacing: -0.028em;
+        margin: 0;
+        text-wrap: balance;
+      }
+      p {
+        margin: 0;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      img,
+      svg {
+        max-width: 100%;
+        display: block;
+      }
+      .shell {
+        width: min(100% - 2.5rem, var(--shell));
+        margin-inline: auto;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+      }
+      .skip-link {
+        position: absolute;
+        left: -999px;
+        top: 0;
+        background: var(--deep);
+        color: var(--on-deep);
+        padding: var(--space-1) var(--space-2);
+        z-index: var(--z-dropdown);
+      }
+      .skip-link:focus {
+        left: 0;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        font-family: var(--font-display);
+        font-size: 0.875rem;
+        font-weight: 600;
+        letter-spacing: -0.012em;
+        line-height: 1;
+        padding: 0.75rem 1.05rem;
+        border-radius: var(--r-ctl);
+        border: 1px solid transparent;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+        transition:
+          background-color 0.18s var(--ease),
+          border-color 0.18s var(--ease),
+          box-shadow 0.18s var(--ease),
+          transform 0.18s var(--ease);
+      }
+      .btn-lg {
+        padding: 0.95rem 1.4rem;
+        font-size: 0.95rem;
+      }
+      .btn-solid {
+        background: var(--deep);
+        color: var(--on-deep);
+        box-shadow: var(--shadow-sm);
+      }
+      .btn-solid:hover {
+        background: var(--deep-2);
+        box-shadow: var(--shadow-md);
+        transform: translateY(-1px);
+      }
+      .btn-ghost {
+        background: var(--panel);
+        color: var(--ink);
+        border-color: var(--line);
+        box-shadow: var(--shadow-sm);
+      }
+      .btn-ghost:hover {
+        background: var(--wash);
+        transform: translateY(-1px);
+      }
+      .btn-gold {
+        background: var(--gold);
+        color: var(--gold-ink);
+      }
+      .btn-gold:hover {
+        background: var(--gold-hi);
+        transform: translateY(-1px);
+      }
+      .btn-on-deep {
+        background: transparent;
+        color: var(--on-deep);
+        border-color: var(--on-deep-line);
+      }
+      .btn-on-deep:hover {
+        background: color-mix(in oklab, var(--on-deep) 8%, transparent);
+        border-color: var(--on-deep-mut);
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      :focus-visible {
+        outline: 2px solid var(--deep);
+        outline-offset: 2px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .btn:hover {
+          transform: none;
+        }
+      }
+    </style>
+
+    <style>
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky);
+        height: var(--head-h);
+        padding: 0.875rem 1rem 0;
+        pointer-events: none;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+        width: fit-content;
+        max-width: 100%;
+        margin-inline: auto;
+        padding: 0.375rem 0.375rem 0.375rem 1.15rem;
+        border-radius: calc(var(--r-card) + 0.375rem);
+        background: var(--deep);
+        color: var(--on-deep);
+        box-shadow: 0 2px 40px oklch(0.19 0.022 172.6 / 0.28);
+        pointer-events: auto;
+      }
+      .logo {
+        font-family: var(--font-display);
+        font-weight: 800;
+        font-size: 1.05rem;
+        letter-spacing: 0.02em;
+        color: var(--on-deep);
+      }
+      .logo-dot {
+        color: var(--gold);
+      }
+      .main-nav ul {
+        display: flex;
+        gap: 0.25rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .nav-link {
+        display: inline-flex;
+        align-items: center;
+        height: 2.625rem;
+        padding: 0 0.75rem;
+        border-radius: var(--r-card);
+        font: 500 0.95rem/1 var(--font-body);
+        color: var(--on-deep-mut);
+        transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
+      }
+      .nav-link:hover,
+      .nav-link.here {
+        color: var(--on-deep);
+        background: color-mix(in oklab, var(--on-deep) 8%, transparent);
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+      }
+      .header-tel {
+        font: 500 0.9rem/1 var(--font-body);
+        color: var(--on-deep-mut);
+      }
+      .header-tel:hover {
+        color: var(--on-deep);
+      }
+      .hbtn {
+        display: inline-flex;
+        align-items: center;
+        height: 2.625rem;
+        padding: 0 1.05rem;
+        border-radius: var(--r-card);
+        font: 600 0.9rem/1 var(--font-display);
+        letter-spacing: -0.012em;
+        white-space: nowrap;
+      }
+      .hbtn-light {
+        background: var(--on-deep);
+        color: var(--deep);
+        box-shadow: inset 0 -2px 0 oklch(0.19 0.022 172.6 / 0.12), 0 2px 6px oklch(0 0 0 / 0.18);
+      }
+      .hbtn-light:hover {
+        background: var(--panel);
+      }
+      .site-header :focus-visible {
+        outline-color: var(--gold-hi);
+      }
+      @media (max-width: 62rem) {
+        .main-nav,
+        .header-tel {
+          display: none;
+        }
+        .bar {
+          width: 100%;
+          justify-content: space-between;
+        }
+      }
+
+      .site-footer {
+        background: var(--deep-2);
+        color: var(--on-deep);
+        padding-top: clamp(3rem, 5vw, 4.5rem);
+      }
+      .footer-inner {
+        display: grid;
+        grid-template-columns: 1.4fr repeat(3, 1fr);
+        gap: var(--space-4);
+        padding-bottom: clamp(2.5rem, 4vw, 3.5rem);
+      }
+      .footer-mission {
+        margin-top: 0.9rem;
+        font-size: 0.875rem;
+        line-height: 1.7;
+        color: var(--on-deep-mut);
+      }
+      .footer-contact {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.3rem;
+        margin-top: var(--space-2);
+        font-size: 0.875rem;
+      }
+      .footer-contact a {
+        color: var(--gold);
+      }
+      .footer-h {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--gold);
+      }
+      .footer-col ul {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        margin: 0.9rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .footer-col a {
+        font-size: 0.875rem;
+        color: var(--on-deep-mut);
+      }
+      .footer-col a:hover {
+        color: var(--on-deep);
+      }
+      .footer-base {
+        border-top: 1px solid var(--on-deep-line);
+        padding: 1.35rem 0;
+        font-size: 0.8125rem;
+        color: var(--on-deep-mut);
+      }
+      .site-footer a:focus-visible {
+        outline-color: var(--gold-hi);
+      }
+      @media (max-width: 62rem) {
+        .footer-inner {
+          grid-template-columns: repeat(2, 1fr);
+          gap: var(--space-3);
+        }
+      }
+      @media (max-width: 34rem) {
+        .footer-inner {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </body>
+</html>

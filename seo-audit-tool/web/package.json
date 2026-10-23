@@ -1,0 +1,16 @@
+{
+  "name": "allum-seo-audit-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The SEO audit tool's page, built with Astro, inside a stand-in for the host site.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^7.0.2"
+  }
+}

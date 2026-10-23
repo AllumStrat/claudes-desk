@@ -1,0 +1,567 @@
+---
+/**
+ * The SEO audit page, as it would sit at /tools/seo-audit/ on the host site.
+ *
+ * Laid out like the host's other free tools: a place photograph under the
+ * green wash, the name set big on it, and the tool in a white window docked
+ * across the photo's lower edge. Below that, what it checks, what the free
+ * audit and the plan include, questions, and the close.
+ *
+ * On allumstrategies.com, swap `HostSite` for `Layout` and the hero for
+ * `ToolHero` (with SeoAuditTool in its `tool` slot), and add the tool to
+ * `src/data/tools.ts`. Everything inside the window comes from
+ * `SeoAuditTool.astro` and is the same in both places.
+ */
+import { Picture } from "astro:assets";
+import HostSite from "../../../layouts/HostSite.astro";
+import SeoAuditTool from "../../../components/SeoAuditTool.astro";
+import photo from "../../../assets/schema.jpg";
+
+const LIVE = "https://allumstrategies.com";
+const BOOK = "https://cal.com/jacoballumbaugh/audit-or-discovery-chat";
+const CHECK = "M4.5 10.5l3.5 3.5 7.5-8";
+
+const trail = [
+  { href: `${LIVE}/`, name: "Home" },
+  { href: `${LIVE}/tools/`, name: "Free Tools" },
+  { name: "SEO Audit" },
+];
+
+const areas = [
+  { name: "Crawling and Indexing", body: "Status codes, redirect chains, canonical tags, robots rules, the XML sitemap and hreflang." },
+  { name: "On-Page", body: "Title, meta description, headings, language, viewport and charset, plus duplicate titles across the pages crawled." },
+  { name: "Content", body: "Visible word count on each page, and pages too thin to rank." },
+  { name: "Images", body: "Missing alt text and dimensions, no lazy loading, broken images, and files over 300 KB." },
+  { name: "Links", body: "Broken links, internal links that redirect, nofollow on your own pages, and vague anchor text." },
+  { name: "Structured Data", body: "Invalid JSON-LD, and LocalBusiness markup missing its name, address, phone, hours or map location." },
+  { name: "Social", body: "The Open Graph and Twitter card tags that decide how a shared link looks." },
+  { name: "Performance", body: "HTML size, time to first byte, render-blocking files and text compression." },
+  { name: "Security", body: "HTTPS and its redirect, HSTS, content security policy and mixed content." },
+  { name: "Local Signals", body: "A visible phone number and address, a tap-to-call link, and markup that matches what the page says." },
+];
+
+const faqs = [
+  {
+    q: "How long does an audit take?",
+    a: "Usually under a minute. The audit stops at 45 seconds and reports everything it checked by then.",
+  },
+  {
+    q: "Which pages does it check?",
+    a: "The page you enter, plus up to four pages it links to on the same site. Start with the page you most want to rank, which for most businesses is the home page or a main service page.",
+  },
+  {
+    q: "Why do I need an email for the free audit?",
+    a: "The sign-in link keeps bots off the tool and gives each person one free audit. There's no password. You get a link, open it in the same browser, and the audit is ready to run.",
+  },
+  {
+    q: "Will the audit slow down my site?",
+    a: "No. It only reads pages, the way a browser does, and makes at most 80 requests in one audit.",
+  },
+  {
+    q: "How is the score worked out?",
+    a: "Each area starts at 100 and loses points for every problem found there: 25 for a high-priority issue, 10 for medium and 4 for low. The overall score is half the average of the areas and half the total issue count, so a few serious problems can't hide behind a lot of clean areas.",
+  },
+  {
+    q: "What does the $5 plan add?",
+    a: "Every issue with its fix, 20 audits a month, a history of past audits, and a weekly re-check of one site that emails you when something changes. Unused audits don't carry over. You can cancel any time from Billing.",
+  },
+  {
+    q: "Can you fix what the audit finds?",
+    a: "Yes, that's our day job. Book a call, send the report, and we'll tell you what it would take.",
+  },
+];
+
+const faqSchema = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+});
+---
+
+<HostSite
+  title="Free SEO Audit Tool: Check Any Page in a Minute | Allum Strategies"
+  description="Enter a URL and get an SEO score out of 100, with every problem ranked by priority and the fix for each. Checks indexing, on-page, links, images, schema, speed and local signals."
+>
+  <Fragment slot="head">
+    <script is:inline type="application/ld+json" set:html={faqSchema} />
+  </Fragment>
+
+  <section class="hero">
+    <div class="hero-top">
+      <div class="hero-sky" aria-hidden="true">
+        <Picture src={photo} formats={["avif", "webp"]} widths={[960, 1600, 2400]} sizes="100vw" alt="" loading="eager" fetchpriority="high" />
+      </div>
+      <div class="shell hero-head">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <ol>
+            {
+              trail.map((c, i) => (
+                <li>
+                  {i > 0 && (
+                    <span class="sep" aria-hidden="true">
+                      &rsaquo;
+                    </span>
+                  )}
+                  {c.href ? <a href={c.href}>{c.name}</a> : <span aria-current="page">{c.name}</span>}
+                </li>
+              ))
+            }
+          </ol>
+        </nav>
+        <h1>Free SEO Audit</h1>
+        <p class="lede">
+          Enter a page and get a score out of 100, with every problem ranked by priority and the fix for each one. It
+          checks that page and up to four more it links to.
+        </p>
+        <ul class="facts">
+          {
+            ["First audit free", "Results in about a minute", "No password"].map((f) => (
+              <li>
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d={CHECK} />
+                </svg>
+                {f}
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
+
+    <div class="shell">
+      <section class="win" aria-label="SEO Audit">
+        <div class="win-bar" aria-hidden="true">
+          <span class="win-lights"><i></i><i></i><i></i></span>
+          <span class="win-title">SEO Audit</span>
+          <span class="win-lights win-ghost"><i></i><i></i><i></i></span>
+        </div>
+        <div class="win-body">
+          <SeoAuditTool />
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="band checks">
+    <div class="shell">
+      <div class="sec-head">
+        <h2>What the Audit Checks</h2>
+        <p>Ten areas, each scored on its own. Every problem comes back with what it costs you, the evidence from your page, and how to fix it.</p>
+      </div>
+      <ol class="area-grid">
+        {
+          areas.map((a, i) => (
+            <li>
+              <span class="area-n" aria-hidden="true">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <h3>{a.name}</h3>
+              <p>{a.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="band plans">
+    <div class="shell">
+      <div class="sec-head">
+        <h2>Free Audit or the $5 Plan</h2>
+        <p>Try it once for free. Keep it if you want to check your site every month.</p>
+      </div>
+      <div class="plan-grid">
+        <article class="plan">
+          <h3>Free</h3>
+          <p class="price">$0</p>
+          <ul>
+            <li>One audit per email</li>
+            <li>The overall score and every area's score</li>
+            <li>The top 5 issues, with the fix for the first</li>
+          </ul>
+        </article>
+        <article class="plan plan-pro">
+          <h3>Full Reports</h3>
+          <p class="price">$5<span>/month</span></p>
+          <ul>
+            <li>20 audits a month, every issue and every fix</li>
+            <li>A history of every audit you've run</li>
+            <li>A weekly re-check of one site, emailed when something changes</li>
+            <li>Cancel any time</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="band faq">
+    <div class="shell faq-inner">
+      <h2>Questions</h2>
+      <div class="faq-list">
+        {
+          faqs.map((f) => (
+            <details name="faq">
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="close">
+    <div class="shell close-inner">
+      <h2>Want Help Fixing What It Found?</h2>
+      <p>Send us the report. We'll tell you which fixes will move your rankings and what they'd take.</p>
+      <div class="close-actions">
+        <a class="btn btn-gold btn-lg" href={BOOK} rel="noopener">Get Found</a>
+        <a class="btn btn-on-deep btn-lg" href="tel:+14805257119">Call 480-525-7119</a>
+      </div>
+    </div>
+  </section>
+</HostSite>
+
+<style>
+  /* ---- Hero: photo under the green wash, window docked off its edge ---- */
+  .hero {
+    --overlap: clamp(7rem, 14vw, 11rem);
+    padding-bottom: clamp(3rem, 6vw, 5rem);
+  }
+  .hero-top {
+    position: relative;
+    isolation: isolate;
+    margin-top: calc(-1 * var(--head-h));
+    padding: calc(var(--head-h) + clamp(2.5rem, 6vw, 4.5rem)) 0 calc(var(--overlap) + clamp(2.5rem, 5vw, 3.75rem));
+    background: var(--deep-2);
+    overflow: clip;
+  }
+  .hero-sky {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+  }
+  .hero-sky :global(img) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 30% 55%;
+    filter: saturate(0.78);
+  }
+  .hero-sky::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--deep-2) 84%, transparent) 0%,
+      color-mix(in oklab, var(--deep) 68%, transparent) 45%,
+      color-mix(in oklab, var(--deep) 22%, transparent) 76%,
+      transparent 100%
+    );
+  }
+  .hero-head {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+  }
+  .crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+    font-size: 0.8125rem;
+    color: var(--on-deep-mut);
+  }
+  .crumbs li {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .crumbs a:hover,
+  .crumbs [aria-current] {
+    color: var(--on-deep);
+  }
+  .hero-head h1 {
+    max-width: 18ch;
+    color: var(--on-deep);
+    font-size: clamp(2.4rem, 5.6vw, 4.25rem);
+    line-height: 1.02;
+    letter-spacing: -0.038em;
+  }
+  .lede {
+    margin-top: 1rem;
+    max-width: 38rem;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--on-deep);
+    text-wrap: pretty;
+  }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1.4rem;
+    margin: 1.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.875rem;
+    color: var(--on-deep-mut);
+  }
+  .facts li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .facts svg {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .win {
+    position: relative;
+    margin-top: calc(-1 * var(--overlap));
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--panel);
+    box-shadow: var(--shadow-win);
+    overflow: clip;
+  }
+  .win-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 0.9rem;
+    background: var(--wash);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .win-lights {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .win-lights i {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--line);
+  }
+  .win-ghost {
+    visibility: hidden;
+  }
+  .win-title {
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .win-body {
+    padding: clamp(1.25rem, 3.5vw, 2.25rem);
+  }
+
+  /* ---- Sections ---- */
+  .band {
+    padding: clamp(3.5rem, 7vw, 6rem) 0;
+  }
+  .sec-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+    gap: 1rem 3rem;
+    align-items: end;
+    margin-bottom: clamp(2rem, 4vw, 3rem);
+  }
+  .sec-head h2 {
+    font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+    line-height: 1.1;
+  }
+  .sec-head p {
+    color: var(--muted);
+    font-size: 1.0625rem;
+  }
+  @media (max-width: 52rem) {
+    .sec-head {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .checks {
+    background: var(--wash);
+  }
+  .area-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .area-grid li {
+    padding: 1.25rem 1.25rem 1.4rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--panel);
+  }
+  .area-n {
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--faint);
+  }
+  .area-grid h3 {
+    margin-top: 0.6rem;
+    font-size: 1.1rem;
+  }
+  .area-grid p {
+    margin-top: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .plan-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    max-width: 52rem;
+  }
+  @media (max-width: 40rem) {
+    .plan-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .plan {
+    padding: clamp(1.4rem, 3vw, 2rem);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--panel);
+    box-shadow: var(--shadow-sm);
+  }
+  .plan-pro {
+    border-color: var(--deep);
+    background: var(--deep);
+    color: var(--on-deep);
+    box-shadow: var(--shadow-lg);
+  }
+  .plan h3 {
+    font-size: 1.15rem;
+  }
+  .price {
+    margin-top: 0.5rem;
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  .price span {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--on-deep-mut);
+  }
+  .plan ul {
+    display: grid;
+    gap: 0.5rem;
+    margin: 1.25rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9375rem;
+  }
+  .plan li {
+    padding-left: 1.4rem;
+    background: no-repeat 0 0.3rem / 0.9rem
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10.5l3.5 3.5 7.5-8' fill='none' stroke='%23177e5c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .plan-pro li {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10.5l3.5 3.5 7.5-8' fill='none' stroke='%23f2c14e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  .faq {
+    background: var(--wash);
+  }
+  .faq-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+    gap: 2rem 4rem;
+  }
+  @media (max-width: 52rem) {
+    .faq-inner {
+      grid-template-columns: 1fr;
+    }
+  }
+  .faq h2 {
+    font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+  }
+  .faq-list {
+    border-top: 1px solid var(--line);
+  }
+  .faq details {
+    border-bottom: 1px solid var(--line);
+  }
+  .faq summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: -0.015em;
+    cursor: pointer;
+    list-style: none;
+  }
+  .faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq summary::after {
+    content: "+";
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .faq details[open] summary::after {
+    content: "\2212";
+  }
+  .faq details p {
+    padding: 0 0 1.25rem;
+    max-width: 40rem;
+    color: var(--ink-2);
+  }
+
+  .close {
+    padding: clamp(4rem, 8vw, 7rem) 0;
+    background: var(--deep);
+    color: var(--on-deep);
+  }
+  .close-inner {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+  }
+  .close h2 {
+    max-width: 16ch;
+    font-size: clamp(2.3rem, 4.8vw, 4rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+  }
+  .close p {
+    margin-top: 1rem;
+    max-width: 32rem;
+    color: var(--on-deep-mut);
+    font-size: 1.0625rem;
+  }
+  .close-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+</style>

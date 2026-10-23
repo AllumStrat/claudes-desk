@@ -1,0 +1,773 @@
+---
+/**
+ * The SEO audit tool: the form, sign-in, the report, and the paid extras.
+ *
+ * Portable on purpose. It reads only the host site's tokens (`--deep`,
+ * `--line`, `--r-card` and the rest) and its `.btn` set, so it drops into
+ * allumstrategies.com's tool window, or any page that declares the same
+ * names, unchanged. Copy this file and `src/scripts/seo-audit.ts`.
+ *
+ * `api` is where the audit server answers. Empty means the page's own origin
+ * (`/api/...`). A live deploy points it at the API's subdomain, which must
+ * list this page's origin in APP_ORIGIN or ALLOWED_ORIGINS and send links
+ * back here with APP_PAGE.
+ *
+ * The report is built by the script from text nodes only, never parsed as
+ * markup, so nothing from an audited site can run on this page. Its styles
+ * are global under `.sat` for that reason: Astro's scoping cannot reach
+ * nodes the script creates.
+ */
+interface Props {
+  api?: string;
+}
+const { api = import.meta.env.PUBLIC_AUDIT_API || "" } = Astro.props;
+---
+
+<div class="sat" data-api={api.replace(/\/+$/, "")}>
+  <div class="sat-account" data-sat="account" hidden>
+    <span class="sat-who">
+      <span class="sat-email" data-sat="account-email"></span>
+      <span class="sat-plan" data-sat="account-plan"></span>
+    </span>
+    <span class="sat-account-actions">
+      <button class="btn btn-gold" type="button" data-sat="upgrade" hidden>Get 20 audits a month for $5</button>
+      <button class="btn btn-ghost" type="button" data-sat="billing" hidden>Billing</button>
+      <button class="btn btn-ghost" type="button" data-sat="signout">Sign out</button>
+    </span>
+  </div>
+
+  <section class="sat-card sat-finish" data-sat="finish" hidden aria-live="polite">
+    <p class="sat-finish-text" data-sat="finish-text">Checking your sign-in link.</p>
+    <p class="sat-note" data-sat="finish-note" hidden></p>
+    <button class="btn btn-solid btn-lg" type="button" data-sat="finish-button" hidden>Sign in</button>
+  </section>
+
+  <form class="sat-run" data-sat="audit-form" autocomplete="off" novalidate>
+    <label class="sat-label" for="sat-url">Page to audit</label>
+    <div class="sat-row">
+      <div class="sat-field">
+        <svg class="sat-field-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="10" cy="10" r="7.25"></circle>
+          <path d="M2.75 10h14.5M10 2.75c2 2 3 4.4 3 7.25s-1 5.25-3 7.25c-2-2-3-4.4-3-7.25s1-5.25 3-7.25Z"></path>
+        </svg>
+        <input
+          id="sat-url"
+          data-sat="url"
+          type="text"
+          inputmode="url"
+          spellcheck="false"
+          autocapitalize="off"
+          placeholder="yourbusiness.com"
+          maxlength="2048"
+          required
+        />
+      </div>
+      <button class="btn btn-solid btn-lg sat-go" type="submit" data-sat="run">Run Audit</button>
+    </div>
+    <div class="sat-human" data-sat="ts-audit"></div>
+  </form>
+
+  <section class="sat-card sat-signin" data-sat="signin" hidden>
+    <h2 class="sat-h">Your First Audit Is Free</h2>
+    <p class="sat-note">Enter your email and we'll send a sign-in link. There's no password. Open the link in this browser and the audit picks up where you left off.</p>
+    <form data-sat="signin-form" autocomplete="on">
+      <label class="sat-label" for="sat-email">Email</label>
+      <div class="sat-row">
+        <div class="sat-field">
+          <input id="sat-email" data-sat="email" name="email" type="email" maxlength="254" placeholder="you@yourbusiness.com" required />
+        </div>
+        <button class="btn btn-solid btn-lg" type="submit" data-sat="signin-button">Email Me a Link</button>
+      </div>
+      <div class="sat-human" data-sat="ts-signin"></div>
+    </form>
+  </section>
+
+  <p class="sat-status" data-sat="status" role="status" aria-live="polite"></p>
+
+  <section class="sat-working" data-sat="working" hidden aria-hidden="true">
+    <div class="sat-bar"><i></i></div>
+    <ul class="sat-areas">
+      <li>Indexing</li>
+      <li>On-page</li>
+      <li>Content</li>
+      <li>Links</li>
+      <li>Images</li>
+      <li>Schema</li>
+      <li>Social</li>
+      <li>Speed</li>
+      <li>Security</li>
+      <li>Local</li>
+    </ul>
+  </section>
+
+  <section class="sat-report" data-sat="report" hidden tabindex="-1" aria-label="Audit results"></section>
+
+  <section class="sat-card" data-sat="watch" hidden>
+    <h2 class="sat-h">Weekly Check</h2>
+    <p class="sat-note">We re-audit one saved site every week and email you when something changes.</p>
+    <form class="sat-row" data-sat="watch-form" autocomplete="off">
+      <div class="sat-field">
+        <input data-sat="watch-url" type="text" inputmode="url" spellcheck="false" placeholder="yourbusiness.com" maxlength="2048" aria-label="Site to check weekly" />
+      </div>
+      <button class="btn btn-solid" type="submit">Save</button>
+      <button class="btn btn-ghost" type="button" data-sat="watch-clear">Stop</button>
+    </form>
+    <p class="sat-note sat-watch-status" data-sat="watch-status"></p>
+  </section>
+
+  <section class="sat-card" data-sat="history" hidden>
+    <h2 class="sat-h">Past Audits</h2>
+    <ul class="sat-history" data-sat="history-list"></ul>
+  </section>
+
+  <p class="sat-foot" data-sat="footer" hidden>
+    <button class="sat-link" type="button" data-sat="delete-account">Delete my account</button>
+  </p>
+</div>
+
+<script>
+  import { mount } from "../scripts/seo-audit";
+  for (const root of document.querySelectorAll<HTMLElement>(".sat")) mount(root);
+</script>
+
+<style is:global>
+  .sat {
+    --high: oklch(0.52 0.17 28);
+    --high-wash: oklch(0.965 0.025 28);
+    --medium: oklch(0.6 0.13 62);
+    --medium-wash: oklch(0.972 0.03 80);
+    --low: var(--muted);
+    display: grid;
+    gap: 1.25rem;
+    color: var(--ink);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .sat [hidden] {
+    display: none !important;
+  }
+
+  /* ---- Account strip ---- */
+  .sat-account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.8rem 0.7rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--wash);
+  }
+  .sat-who {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .sat-email {
+    font-family: var(--font-display);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .sat-plan {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  .sat-account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* ---- Fields ---- */
+  .sat-label {
+    display: block;
+    margin-bottom: 0.45rem;
+    font-family: var(--font-display);
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+  }
+  .sat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .sat-field {
+    position: relative;
+    flex: 1 1 18rem;
+    min-width: 0;
+  }
+  .sat-field input {
+    width: 100%;
+    height: 3.1rem;
+    padding: 0 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-ctl);
+    background: var(--panel);
+    color: var(--ink);
+    font: 400 1rem/1 var(--font-body);
+    box-shadow: inset 0 1px 2px oklch(0.19 0.022 172.6 / 0.04);
+    transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .sat-field-icon + input {
+    padding-left: 2.6rem;
+  }
+  .sat-field input::placeholder {
+    color: var(--faint);
+  }
+  .sat-field input:focus {
+    outline: none;
+    border-color: var(--deep);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--deep) 16%, transparent);
+  }
+  .sat-field-icon {
+    position: absolute;
+    left: 0.9rem;
+    top: 50%;
+    width: 1.1rem;
+    height: 1.1rem;
+    translate: 0 -50%;
+    fill: none;
+    stroke: var(--faint);
+    stroke-width: 1.4;
+  }
+  .sat-go {
+    min-width: 9.5rem;
+    height: 3.1rem;
+  }
+  @media (max-width: 34rem) {
+    .sat-row > .btn {
+      flex: 1 1 auto;
+    }
+  }
+  .sat-human:empty {
+    display: none;
+  }
+  .sat-human {
+    margin-top: 0.75rem;
+  }
+
+  /* ---- Cards and text ---- */
+  .sat-card {
+    display: grid;
+    gap: 0.75rem;
+    padding: clamp(1.1rem, 3vw, 1.5rem);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--panel);
+  }
+  .sat-signin {
+    background: var(--wash);
+  }
+  .sat-finish {
+    border-color: color-mix(in oklab, var(--deep) 30%, var(--line));
+    background: var(--pass-wash);
+  }
+  .sat-finish-text {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: -0.012em;
+  }
+  .sat-finish .btn {
+    justify-self: start;
+  }
+  .sat-h {
+    font-size: 1.2rem;
+    letter-spacing: -0.028em;
+  }
+  .sat-note {
+    color: var(--muted);
+    font-size: 0.875rem;
+    max-width: 44rem;
+  }
+  .sat-status:empty {
+    display: none;
+  }
+  .sat-status {
+    padding: 0.75rem 1rem;
+    border-radius: var(--r-ctl);
+    background: var(--wash);
+    color: var(--ink-2);
+    font-size: 0.9rem;
+  }
+  .sat-status[data-tone="error"] {
+    background: var(--high-wash);
+    color: oklch(0.38 0.12 28);
+  }
+  .sat-status[data-tone="ok"] {
+    background: var(--pass-wash);
+    color: oklch(0.34 0.08 162);
+  }
+  .sat-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.8125rem;
+    color: var(--muted);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .sat-foot {
+    text-align: right;
+  }
+
+  /* ---- Working ---- */
+  .sat-working {
+    display: grid;
+    gap: 1rem;
+  }
+  .sat-bar {
+    position: relative;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--line-soft);
+  }
+  .sat-bar i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 35%;
+    border-radius: inherit;
+    background: var(--deep);
+    animation: sat-slide 1.6s var(--ease) infinite;
+  }
+  @keyframes sat-slide {
+    from {
+      translate: -100% 0;
+    }
+    to {
+      translate: 300% 0;
+    }
+  }
+  .sat-areas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-areas li {
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    font-size: 0.8125rem;
+    color: var(--muted);
+    animation: sat-pulse 2.4s ease-in-out infinite;
+  }
+  .sat-areas li:nth-child(2n) {
+    animation-delay: 0.4s;
+  }
+  .sat-areas li:nth-child(3n) {
+    animation-delay: 0.8s;
+  }
+  @keyframes sat-pulse {
+    50% {
+      background: var(--wash);
+      color: var(--ink);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sat-bar i,
+    .sat-areas li {
+      animation: none;
+    }
+    .sat-bar i {
+      width: 100%;
+      opacity: 0.4;
+    }
+  }
+
+  /* ---- Report ---- */
+  .sat-report {
+    display: grid;
+    gap: 1.75rem;
+    outline: none;
+    /* Clear the host's sticky header when the report scrolls into view. */
+    scroll-margin-top: calc(var(--head-h, 0rem) + 1.5rem);
+  }
+  .sat-summary {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: clamp(1.25rem, 4vw, 2.5rem);
+    align-items: center;
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    border-radius: var(--r-card);
+    background: var(--deep-2);
+    color: var(--on-deep);
+  }
+  .sat-dial {
+    --v: 0;
+    --tone: var(--pass);
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 8.5rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      radial-gradient(closest-side, var(--deep-2) 82%, transparent 83%),
+      conic-gradient(var(--tone) calc(var(--v) * 1%), color-mix(in oklab, var(--on-deep) 12%, transparent) 0);
+  }
+  .sat-dial[data-band="mid"] {
+    --tone: var(--gold);
+  }
+  .sat-dial[data-band="low"] {
+    --tone: oklch(0.66 0.17 32);
+  }
+  .sat-dial-n {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    text-align: center;
+  }
+  .sat-dial-n small {
+    display: block;
+    margin-top: 0.3rem;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--on-deep-mut);
+  }
+  .sat-summary-h {
+    font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+    letter-spacing: -0.03em;
+    overflow-wrap: anywhere;
+    color: var(--on-deep);
+  }
+  .sat-summary-sub {
+    margin-top: 0.35rem;
+    font-size: 0.875rem;
+    color: var(--on-deep-mut);
+  }
+  .sat-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-counts li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: var(--r-pill);
+    background: color-mix(in oklab, var(--on-deep) 9%, transparent);
+    font-size: 0.8125rem;
+  }
+  .sat-counts b {
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+  .sat-counts i {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--c);
+  }
+  .sat-summary .sat-actions {
+    margin-top: 1rem;
+  }
+  .sat-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  @media (max-width: 34rem) {
+    .sat-summary {
+      grid-template-columns: 1fr;
+      justify-items: start;
+    }
+  }
+
+  .sat-sec-h {
+    margin-bottom: 0.8rem;
+    font-size: 1.1rem;
+    letter-spacing: -0.028em;
+  }
+  .sat-sec-h span {
+    color: var(--faint);
+    font-weight: 600;
+  }
+
+  .sat-areas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.5rem 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-area {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.35rem 0.75rem;
+    align-items: baseline;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .sat-area-name {
+    font-weight: 500;
+  }
+  .sat-area-n {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .sat-area-n small {
+    color: var(--faint);
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 0.75rem;
+    margin-left: 0.35rem;
+  }
+  .sat-meter {
+    grid-column: 1 / -1;
+    height: 5px;
+    border-radius: var(--r-pill);
+    background: var(--line-soft);
+    overflow: hidden;
+  }
+  .sat-meter i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--pass);
+  }
+  .sat-meter[data-band="mid"] i {
+    background: var(--medium);
+  }
+  .sat-meter[data-band="low"] i {
+    background: var(--high);
+  }
+
+  .sat-issues {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-issue {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--c, var(--low));
+    border-radius: var(--r-ctl);
+    background: var(--panel);
+  }
+  .sat-issue[data-p="high"] {
+    --c: var(--high);
+  }
+  .sat-issue[data-p="medium"] {
+    --c: var(--medium);
+  }
+  .sat-issue summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.8rem 1rem;
+    cursor: pointer;
+    list-style: none;
+  }
+  .sat-issue summary::-webkit-details-marker {
+    display: none;
+  }
+  .sat-issue summary::after {
+    content: "";
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-left: auto;
+    border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted);
+    rotate: 45deg;
+    translate: 0 -2px;
+    transition: rotate 0.18s var(--ease);
+  }
+  .sat-issue[open] summary::after {
+    rotate: 225deg;
+    translate: 0 2px;
+  }
+  .sat-issue-t {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .sat-tag {
+    flex: none;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--r-chip);
+    background: var(--wash);
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .sat-issue dl {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 0.55rem 1rem;
+    margin: 0;
+    padding: 0 1rem 1rem;
+  }
+  .sat-issue dt {
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .sat-issue dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .sat-issue dd.sat-evidence {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.8125rem;
+    color: var(--ink-2);
+  }
+  .sat-issue dd.sat-fix {
+    padding: 0.55rem 0.75rem;
+    border-radius: var(--r-ctl);
+    background: var(--pass-wash);
+  }
+  .sat-issue dd.sat-locked {
+    padding: 0.55rem 0.75rem;
+    border: 1px dashed var(--gold-line);
+    border-radius: var(--r-ctl);
+    background: var(--gold-wash);
+    color: var(--gold-ink);
+  }
+  @media (max-width: 34rem) {
+    .sat-issue dl {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+    }
+    .sat-issue dd + dt {
+      margin-top: 0.5rem;
+    }
+  }
+
+  .sat-upsell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--gold-line);
+    border-radius: var(--r-card);
+    background: var(--gold-wash);
+    color: var(--gold-ink);
+  }
+  .sat-upsell p {
+    max-width: 36rem;
+  }
+  .sat-upsell strong {
+    font-family: var(--font-display);
+  }
+
+  .sat-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--ink-2);
+  }
+  .sat-list li + li {
+    margin-top: 0.25rem;
+  }
+  .sat-passed {
+    columns: 2 16rem;
+    column-gap: 1.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-passed li {
+    display: flex;
+    gap: 0.5rem;
+    break-inside: avoid;
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+    color: var(--ink-2);
+  }
+  .sat-passed svg {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.2rem;
+    fill: none;
+    stroke: var(--pass);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .sat-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-ctl);
+  }
+  .sat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .sat-table th,
+  .sat-table td {
+    padding: 0.55rem 0.8rem;
+    text-align: left;
+    border-bottom: 1px solid var(--line-soft);
+    overflow-wrap: anywhere;
+  }
+  .sat-table th {
+    background: var(--wash);
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .sat-table tr:last-child td {
+    border-bottom: 0;
+  }
+  .sat-more summary {
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--deep);
+  }
+  .sat-more[open] summary {
+    margin-bottom: 0.8rem;
+  }
+
+  .sat-history {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sat-history li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 0.875rem;
+  }
+  .sat-history .sat-h-url {
+    flex: 1 1 14rem;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .sat-history .sat-h-meta {
+    color: var(--muted);
+  }
+  .sat-history .btn {
+    padding: 0.45rem 0.75rem;
+  }
+</style>

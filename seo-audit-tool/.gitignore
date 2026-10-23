@@ -4,3 +4,6 @@ reports/
 .wrangler/
 .data/
 wrangler.toml
+web/node_modules/
+web/dist/
+web/.astro/
