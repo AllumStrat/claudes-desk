@@ -23,7 +23,7 @@ npm install
 npm start
 ```
 
-Open http://127.0.0.1:8787 and sign up with any email. The sign-in email is not really sent: the link prints in the terminal where `npm start` is running. Open it in the same browser, press Sign in, then run an audit. Data is kept in `.data/local.db` (delete that folder to start fresh). Stop the server with Ctrl+C.
+Open http://127.0.0.1:8787 and sign up with any email. The sign-in email is not really sent: the link prints in the terminal where `npm start` is running. Open it in the same browser. The page shows which email the link is for; press "Sign in as ..." and run an audit. Data is kept in `.data/local.db` (delete that folder to start fresh). Stop the server with Ctrl+C.
 
 From the terminal, without accounts:
 
@@ -62,7 +62,7 @@ This uses Stripe's test mode only, so no real money moves. The app refuses a liv
 4. Sign in, use your free audit, then press the $5 button. Pay with Stripe's test card 4242 4242 4242 4242, any future date and any CVC. Back on the page, the plan turns on within a few seconds and shows 20 audits.
 5. Press Billing to open Stripe's customer portal, where you can cancel. Stripe asks you to save the portal settings once in test mode (Settings, Billing, Customer portal) before it opens. Renewals (the reset to 20) are covered by the automated tests, since a real test-mode renewal only comes a month later.
 
-To try the human check locally, use Cloudflare's test keys: `TURNSTILE_SITE_KEY=1x00000000000000000000AA` and `TURNSTILE_SECRET=1x0000000000000000000000000000000AA` always pass.
+To try the human check locally, use Cloudflare's test keys: `TURNSTILE_SITE_KEY=1x00000000000000000000AA` and `TURNSTILE_SECRET=1x0000000000000000000000000000000AA` always pass. They only work on the local http server: an https `APP_ORIGIN` refuses to start with a test secret or with none, unless `TURNSTILE_BYPASS=dev` is set.
 
 ## What it checks
 
@@ -138,30 +138,36 @@ All settings are environment variables. On a Worker, the ones marked secret go i
 | `EMAIL_FROM` | `Allum SEO Audit <audit@allumstrategies.com>` | Sender address. It has to be on a domain set up with the email provider |
 | `RESEND_API_KEY` (secret) | none | For `resend` |
 | `STRIPE_SECRET_KEY` (secret) | none | Test key `sk_test_...`. Payments are off without it |
-| `STRIPE_PRICE_ID` | none | The $5 monthly price |
+| `STRIPE_PRICE_ID` | none | The $5 monthly price. Paid invoices for any other price grant nothing |
+| `STRIPE_PRICE_AMOUNT` | 500 | Cents a paid invoice must reach to grant runs |
 | `STRIPE_WEBHOOK_SECRET` (secret) | none | `whsec_...` from the webhook endpoint or `stripe listen` |
 | `STRIPE_ALLOW_LIVE` | off | Must be `yes` before a live key is accepted |
-| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` (secret) | none | Turn on the human check |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` (secret) | none | The human check. Required when `APP_ORIGIN` is https |
+| `TURNSTILE_BYPASS` | off | `dev` lets an https app run without the human check, for tests and private previews only |
 | `RUNS_PER_MONTH` | 20 | Audits per paid month |
 | `FREE_SHOW_ISSUES`, `FREE_SHOW_FIXES` | 5, 1 | How much the free audit shows |
 | `AUDITS_ENABLED`, `SIGNUPS_ENABLED` | on | Off switches. `0` pauses audits, or stops new sign-ups while existing users can still sign in |
 | `AUDIT_RATE_LIMIT` | 10 | Audits per connection per 10 minutes |
 | `AUDITS_PER_HOUR_ACCOUNT` | 10 | Audits per account per hour, even with runs left |
 | `AUDIT_TARGET_LIMIT` | 10 | Audits of the same site per hour, from anyone |
-| `FREE_AUDITS_PER_IP_DAY` | 3 | Free audits per connection per day |
+| `FREE_AUDITS_PER_IP_DAY`, `FREE_AUDITS_PER_IP_WEEK` | 3, 5 | Free audits per connection per day and per 7 days. IPv6 counts per /64 |
+| `WATCH_CHANGES_PER_DAY` | 5 | Changes to the weekly check site per account per day |
+| `BILLING_PER_10_MIN` | 5 | Checkout and portal requests per account per 10 minutes |
 | `DAILY_AUDIT_CAP` | 1000 | Audits per day for the whole app |
 | `SIGNIN_PER_EMAIL`, `SIGNIN_PER_IP` | 3, 10 | Sign-in emails per address per 15 minutes, and per connection per hour |
 | `SESSION_DAYS`, `LOGIN_LINK_MINUTES` | 30, 15 | How long a sign-in lasts, and how long a link works |
 | `AUDIT_MAX_CONCURRENT` | 2 | Audits running at once per server |
 | `AUDIT_MAX_PAGES` | 5 | Pages per audit, start page included (hard cap 10) |
-| `TRUST_PROXY` | off | Set to 1 only behind a proxy you control, to read the visitor IP from X-Forwarded-For |
+| `TRUST_PROXY` | off | `1` behind a proxy you control: the visitor IP is the last X-Forwarded-For entry. `cloudflare`: the CF-Connecting-IP header, only if the server takes traffic from Cloudflare alone |
 | `JEV_PROVIDER` | off | `typesafe`, `cloudflare`, `workers-ai` or `mock` |
 | `TYPESAFE_API_KEY` (secret), `JEV_MODEL` | none, `jev-latest` | For `typesafe` |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (secret) | none | For `cloudflare` |
 
 ## Limits per audit
 
-Up to 5 pages, 20 link checks (8 external), 12 image checks, 5 redirects per request, 8 seconds per request, 45 seconds for the whole audit, 2 MB of HTML per page. That is roughly 60 requests at most (plus redirect hops) to the audited site and the sites it links to. Callers cannot raise these past the hard caps in `src/core/audit.js`.
+Up to 5 pages, 20 link checks (8 external), 12 image checks, 5 redirects per request, 8 seconds per request, 45 seconds for the whole audit, 2 MB of HTML per page. At most 80 HTTP requests per audit, redirect hops included, and at most 12 to any one host other than the audited site. Callers cannot raise these past the hard caps in `src/core/audit.js`.
+
+Each page is parsed to at most 256 levels of nesting and 30,000 elements, and JSON-LD to 20 blocks of up to 512 KB and 64 levels. Past those the audit checks the part it read and says so. A stored report is at most 128 KB.
 
 ## How it is built
 
@@ -186,7 +192,7 @@ migrations/     the database tables (D1 on Cloudflare, SQLite locally)
 src/node/       local server, CLI, local database, socket-level address guard
 src/worker/     Cloudflare Worker entry with the hourly cron (not deployed)
 public/         the page
-test/           111 tests, no network needed
+test/           142 tests, no network needed
 ```
 
 ## API
@@ -195,11 +201,12 @@ test/           111 tests, no network needed
 | --- | --- |
 | `GET /api/me` | The signed-in user, plan, runs left, and whether payments and the human check are on |
 | `POST /api/auth/start` | `{ email, turnstileToken }`. Emails a sign-in link |
-| `POST /api/auth/verify` | `{ token }` from the link. Starts a session (HttpOnly cookie) |
+| `POST /api/auth/peek` | `{ token }` from the link. Says which email the link is for, without using it |
+| `POST /api/auth/verify` | `{ token, email }`, the email the person confirmed. Starts a session (HttpOnly cookie) |
 | `POST /api/auth/logout` | Ends the session |
-| `POST /api/audit` | `{ url, turnstileToken }`. Runs an audit and spends the free audit or one paid run |
+| `POST /api/audit` | `{ url, turnstileToken }`. Runs an audit and spends the free audit or one paid run (refunded only if the site could not be reached or a limit stopped it) |
 | `GET /api/audits`, `GET /api/audits/:id` | History (paid plan) and one saved audit |
-| `POST /api/watch` | `{ url }` saves the weekly check site, `{ url: null }` stops it (paid plan) |
+| `POST /api/watch` | `{ url }` saves the weekly check site, `{ url: null }` stops it (paid plan). A new site waits for the weekly slot if a check ran in the last 7 days |
 | `POST /api/billing/checkout`, `POST /api/billing/portal` | Return a Stripe page to send the browser to |
 | `POST /api/stripe/webhook` | Stripe events; signature checked |
 | `POST /api/account/delete` | Deletes the account and its audits |
