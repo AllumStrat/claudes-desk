@@ -62,3 +62,13 @@ test('non-API paths go to static assets, and the cron runs', async () => {
   await worker.scheduled({}, env, { waitUntil: (p) => waits.push(p) });
   assert.deepEqual(await waits[0], []);
 });
+
+test('the per-IP limiter covers every API route except the Stripe webhook', async () => {
+  const seen = [];
+  const env = { ...baseEnv(), IP_RATE_LIMITER: { limit: async ({ key }) => (seen.push(key), { success: false }) } };
+  assert.equal((await worker.fetch(new Request(`${ORIGIN}/api/me`, { headers: { 'cf-connecting-ip': '9.9.9.9' } }), env)).status, 429);
+  assert.equal((await worker.fetch(post('/api/billing/portal', '{}', { 'cf-connecting-ip': '9.9.9.9' }), env)).status, 429);
+  const hook = await worker.fetch(post('/api/stripe/webhook', '{}'), env);
+  assert.equal(hook.status, 503); // billing is off here; the point is that it was not rate limited
+  assert.deepEqual(seen, ['9.9.9.9', '9.9.9.9']);
+});

@@ -234,3 +234,89 @@ test('unknown event types are acknowledged and change nothing', async () => {
   assert.equal(res.status, 200);
   void WEBHOOK_SECRET;
 });
+
+test('a paid invoice only counts for the configured price and amount', async () => {
+  const ctx = makeApp();
+  const { c } = await signedIn(ctx);
+  await c.post('/api/billing/checkout');
+  const end = Math.floor(ctx.time.t / 1000) + 30 * DAY;
+  const line = (price) => ({ lines: { data: [{ price: { id: price }, period: { end } }] } });
+  assert.equal((await stripeEvent(ctx, paidInvoice('cus_1', end, line('price_other')))).status, 200);
+  assert.equal((await stripeEvent(ctx, paidInvoice('cus_1', end, { amount_paid: 0 }))).status, 200);
+  assert.equal((await stripeEvent(ctx, paidInvoice('cus_1', end, { amount_paid: 100 }))).status, 200);
+  assert.equal((await c.get('/api/me')).data.user.plan, 'free');
+  assert.ok(ctx.logs.some((l) => /invoice ignored: wrong price/.test(l)));
+  assert.ok(ctx.logs.some((l) => /invoice ignored: wrong amount/.test(l)));
+  // The newer API shape names the price under pricing.price_details.
+  const basil = { lines: { data: [{ pricing: { price_details: { price: 'price_test_5' } }, period: { end } }] } };
+  await stripeEvent(ctx, paidInvoice('cus_1', end, basil));
+  assert.equal((await c.get('/api/me')).data.user.plan, 'pro');
+});
+
+test('two checkout tabs share one session, so only one subscription can start', async () => {
+  const ctx = makeApp();
+  const { c, user } = await signedIn(ctx);
+  const results = await Promise.all([c.post('/api/billing/checkout'), c.post('/api/billing/checkout'), c.post('/api/billing/checkout')]);
+  assert.equal(ctx.stripe.calls.filter(([k]) => k === 'checkout').length, 1);
+  assert.ok(results.every((r) => r.status === 200 || r.status === 409), results.map((r) => r.status).join());
+  const again = await c.post('/api/billing/checkout');
+  assert.equal(again.status, 200);
+  assert.equal(ctx.stripe.calls.filter(([k]) => k === 'checkout').length, 1);
+  const [, args] = ctx.stripe.calls.find(([k]) => k === 'checkout');
+  assert.equal(args.expiresAt, Math.floor(ctx.time.t / 1000) + 3600);
+  // Once that session has expired, a new one is made.
+  ctx.time.t += 61 * 60_000;
+  await c.post('/api/billing/checkout');
+  assert.equal(ctx.stripe.calls.filter(([k]) => k === 'checkout').length, 2);
+  // A live subscription without a paid invoice yet still blocks a second one.
+  await stripeEvent(ctx, subEvent('customer.subscription.created', 'cus_1', 'active', Math.floor(ctx.time.t / 1000)));
+  await ctx.store.clearCheckout(user.id);
+  assert.equal((await c.post('/api/billing/checkout')).status, 409);
+});
+
+test('checkout and portal are limited per account', async () => {
+  const ctx = makeApp();
+  const { c } = await signedIn(ctx);
+  await c.post('/api/billing/checkout');
+  const statuses = [];
+  for (let i = 0; i < 6; i++) statuses.push((await c.post('/api/billing/portal')).status);
+  assert.deepEqual(statuses, [200, 200, 200, 200, 429, 429]);
+  ctx.time.t += 11 * 60_000;
+  assert.equal((await c.post('/api/billing/portal')).status, 200);
+});
+
+test('a full refund or a dispute ends paid access; a partial refund does not', async () => {
+  const ctx = makeApp();
+  const { c } = await signedIn(ctx);
+  await c.post('/api/billing/checkout');
+  const now = Math.floor(ctx.time.t / 1000);
+  const invoice = paidInvoice('cus_1', now + 30 * DAY);
+  await stripeEvent(ctx, invoice);
+  const charge = (refunded) => ({ id: `evt_r${refunded}`, type: 'charge.refunded', data: { object: { id: 'ch_1', customer: 'cus_1', refunded, amount_refunded: refunded ? 500 : 100 } } });
+  await stripeEvent(ctx, charge(false));
+  assert.equal((await c.get('/api/me')).data.user.plan, 'pro');
+  await stripeEvent(ctx, charge(true));
+  let me = (await c.get('/api/me')).data.user;
+  assert.equal(me.plan, 'free');
+  assert.equal(me.runsLeft, 0);
+  // The same invoice again does not turn it back on; next month's does.
+  await stripeEvent(ctx, { ...invoice, id: 'evt_replay_after_refund' });
+  assert.equal((await c.get('/api/me')).data.user.plan, 'free');
+  await stripeEvent(ctx, paidInvoice('cus_1', now + 60 * DAY));
+  assert.equal((await c.get('/api/me')).data.user.plan, 'pro');
+  // A dispute names only the charge; the customer is looked up.
+  ctx.stripe.charges.ch_2 = { id: 'ch_2', customer: 'cus_1' };
+  await stripeEvent(ctx, { id: 'evt_dp', type: 'charge.dispute.created', data: { object: { id: 'dp_1', charge: 'ch_2', amount: 500 } } });
+  me = (await c.get('/api/me')).data.user;
+  assert.equal(me.plan, 'free');
+  assert.ok(ctx.stripe.calls.some(([k, id]) => k === 'charge' && id === 'ch_2'));
+});
+
+test('the Stripe client looks up a charge with a GET', async () => {
+  const sent = [];
+  const stripe = createStripeClient({ secretKey: 'sk_test_1', fetchImpl: async (url, init) => (sent.push({ url, init }), Response.json({ id: 'ch_1', customer: 'cus_1' })) });
+  assert.equal((await stripe.retrieveCharge('ch_1')).customer, 'cus_1');
+  assert.equal(sent[0].url, 'https://api.stripe.com/v1/charges/ch_1');
+  assert.equal(sent[0].init.method, 'GET');
+  assert.equal(sent[0].init.body, undefined);
+});

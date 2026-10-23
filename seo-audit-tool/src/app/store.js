@@ -145,6 +145,31 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
       await run('UPDATE users SET stripe_customer_id = ? WHERE id = ? AND stripe_customer_id IS NULL', customerId, userId);
       return store.getUser(userId);
     },
+    // Checkout. A short lock lets only one request make a session; the
+    // session is then kept until it expires so other tabs reuse it.
+    async lockCheckout(userId, now, lockMs = 30_000) {
+      return changed(
+        await run(
+          'UPDATE users SET checkout_url = NULL, checkout_expires_at = ? WHERE id = ? AND (checkout_expires_at IS NULL OR checkout_expires_at <= ?)',
+          now + lockMs,
+          userId,
+          now,
+        ),
+      ) === 1;
+    },
+    async saveCheckout(userId, url, expiresAt) {
+      await run('UPDATE users SET checkout_url = ?, checkout_expires_at = ? WHERE id = ?', url, expiresAt, userId);
+    },
+    async clearCheckout(userId) {
+      await run('UPDATE users SET checkout_url = NULL, checkout_expires_at = NULL WHERE id = ?', userId);
+    },
+    // A full refund or a dispute ends the current paid period. The period end
+    // stays, so a replay of the same invoice cannot turn it back on; the next
+    // period's invoice does.
+    async revokePaid(customer) {
+      return changed(await run("UPDATE users SET plan = 'free', runs_left = 0, watch_url = NULL, watch_next_at = NULL WHERE stripe_customer_id = ?", customer));
+    },
+
     // Records an event id. False means it was already handled.
     async markEvent(id, now) {
       return changed(await run('INSERT INTO stripe_events (id, received_at) VALUES (?, ?) ON CONFLICT (id) DO NOTHING', id, now)) === 1;
@@ -155,7 +180,12 @@ export function createStore(db, { runsPerPeriod = 20, graceMs = 3 * 86_400_000 }
     async linkCheckout({ customer, subscription, userId }) {
       if (!customer || !userId) return 0;
       return changed(
-        await run('UPDATE users SET stripe_subscription_id = COALESCE(?, stripe_subscription_id) WHERE id = ? AND stripe_customer_id = ?', subscription, userId, customer),
+        await run(
+          'UPDATE users SET stripe_subscription_id = COALESCE(?, stripe_subscription_id), checkout_url = NULL, checkout_expires_at = NULL WHERE id = ? AND stripe_customer_id = ?',
+          subscription,
+          userId,
+          customer,
+        ),
       );
     },
     // A paid invoice starts a new period: 20 fresh runs, unused ones do not

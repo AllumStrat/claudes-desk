@@ -32,6 +32,11 @@ export function fakeStripe() {
       calls.push(['portal', args]);
       return { url: 'https://billing.stripe.com/p/session/test_123' };
     },
+    charges: {},
+    async retrieveCharge(id) {
+      calls.push(['charge', id]);
+      return this.charges[id] || { id, customer: null };
+    },
   };
 }
 
@@ -121,7 +126,16 @@ let eventN = 0;
 export const paidInvoice = (customer, periodEndSec, extra = {}) => ({
   id: `evt_${++eventN}`,
   type: 'invoice.paid',
-  data: { object: { id: `in_${eventN}`, customer, billing_reason: 'subscription_cycle', lines: { data: [{ period: { start: periodEndSec - 2_592_000, end: periodEndSec } }] }, ...extra } },
+  data: {
+    object: {
+      id: `in_${eventN}`,
+      customer,
+      billing_reason: 'subscription_cycle',
+      amount_paid: 500,
+      lines: { data: [{ price: { id: 'price_test_5' }, period: { start: periodEndSec - 2_592_000, end: periodEndSec } }] },
+      ...extra,
+    },
+  },
 });
 
 export const subEvent = (type, customer, status, created, subId = 'sub_1') => ({

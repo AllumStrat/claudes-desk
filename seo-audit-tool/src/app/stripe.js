@@ -24,13 +24,14 @@ export function isTestKey(key) {
 }
 
 export function createStripeClient({ secretKey, fetchImpl = globalThis.fetch }) {
-  async function call(path, params, { idempotencyKey } = {}) {
-    const headers = { authorization: `Bearer ${secretKey}`, 'content-type': 'application/x-www-form-urlencoded' };
+  async function call(path, params, { idempotencyKey, method = 'POST' } = {}) {
+    const headers = { authorization: `Bearer ${secretKey}` };
+    if (method === 'POST') headers['content-type'] = 'application/x-www-form-urlencoded';
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
     const res = await fetchImpl(`${API}${path}`, {
-      method: 'POST',
+      method,
       headers,
-      body: formEncode(params).toString(),
+      body: method === 'POST' ? formEncode(params).toString() : undefined,
       signal: AbortSignal.timeout(10_000),
     });
     const data = await res.json().catch(() => ({}));
@@ -40,17 +41,24 @@ export function createStripeClient({ secretKey, fetchImpl = globalThis.fetch }) 
   return {
     createCustomer: ({ email, userId }) =>
       call('/customers', { email, metadata: { user_id: userId } }, { idempotencyKey: `customer-${userId}` }),
-    createCheckoutSession: ({ customer, price, userId, successUrl, cancelUrl }) =>
-      call('/checkout/sessions', {
-        mode: 'subscription',
-        customer,
-        client_reference_id: userId,
-        line_items: [{ price, quantity: 1 }],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        subscription_data: { metadata: { user_id: userId } },
-      }),
+    createCheckoutSession: ({ customer, price, userId, successUrl, cancelUrl, expiresAt, idempotencyKey }) =>
+      call(
+        '/checkout/sessions',
+        {
+          mode: 'subscription',
+          customer,
+          client_reference_id: userId,
+          line_items: [{ price, quantity: 1 }],
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          expires_at: expiresAt,
+          subscription_data: { metadata: { user_id: userId } },
+        },
+        { idempotencyKey },
+      ),
     createPortalSession: ({ customer, returnUrl }) => call('/billing_portal/sessions', { customer, return_url: returnUrl }),
+    // Disputes name only the charge, so the customer is looked up.
+    retrieveCharge: (id) => call(`/charges/${encodeURIComponent(id)}`, null, { method: 'GET' }),
   };
 }
 
@@ -73,8 +81,13 @@ export async function verifyStripeSignature({ payload, header, secret, tolerance
 
 const idOf = (v) => (typeof v === 'string' ? v : v && typeof v.id === 'string' ? v.id : null);
 
+// The price on an invoice line, across Stripe API versions.
+const linePrice = (l) => idOf(l?.price) || idOf(l?.plan) || idOf(l?.pricing?.price_details?.price) || null;
+
 // Turns a verified Stripe event into one change for the store, or null.
-export function describeEvent(event) {
+// With a plan ({ priceId, minAmount }), a paid invoice only counts when one
+// of its lines is that price and at least minAmount (cents) was paid.
+export function describeEvent(event, plan = null) {
   const obj = event?.data?.object || {};
   switch (event?.type) {
     case 'checkout.session.completed':
@@ -82,12 +95,21 @@ export function describeEvent(event) {
     case 'invoice.paid': {
       // Only subscription invoices grant runs. The paid period comes from the
       // subscription line, which is the same across Stripe API versions.
-      const line = (obj.lines?.data || []).find((l) => l?.period?.end) || null;
-      const periodEnd = line ? Number(line.period.end) * 1000 : null;
+      const lines = (obj.lines?.data || []).filter((l) => l?.period?.end);
+      const line = (plan ? lines.find((l) => linePrice(l) === plan.priceId) : lines[0]) || null;
       const isSub = Boolean(obj.subscription || obj.parent?.subscription_details || /^subscription/.test(obj.billing_reason || ''));
-      if (!isSub || !periodEnd) return null;
-      return { kind: 'paid', customer: idOf(obj.customer), invoiceId: obj.id, periodEnd };
+      if (!isSub) return null;
+      if (plan && (!line || !(Number(obj.amount_paid) >= Math.max(1, plan.minAmount || 0)))) {
+        return { kind: 'ignored', reason: line ? 'amount' : 'price', invoiceId: obj.id };
+      }
+      if (!line) return null;
+      return { kind: 'paid', customer: idOf(obj.customer), invoiceId: obj.id, periodEnd: Number(line.period.end) * 1000 };
     }
+    // A full refund or any dispute ends paid access for the current period.
+    case 'charge.refunded':
+      return obj.refunded === true ? { kind: 'revoke', customer: idOf(obj.customer), reason: 'refund' } : null;
+    case 'charge.dispute.created':
+      return { kind: 'revoke', charge: idOf(obj.charge), reason: 'dispute' };
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':

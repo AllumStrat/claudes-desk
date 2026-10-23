@@ -21,6 +21,10 @@ const BODY_MAX = 4096;
 const WEBHOOK_MAX = 256 * 1024;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const AUDIT_ID_RE = /^[A-Za-z0-9_-]{22}$/;
+const CHECKOUT_MINUTES = 60; // Stripe allows 30 minutes to 24 hours
+// Subscription states that already have (or are about to have) the plan.
+const LIVE_SUB = new Set(['active', 'trialing', 'past_due']);
+const idOf = (v) => (typeof v === 'string' ? v : typeof v?.id === 'string' ? v.id : null);
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]{1,64}@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 const USER_ERRORS = {
@@ -166,7 +170,6 @@ export function createApp(deps) {
     if (!email) return json(400, { error: 'Enter a valid email address.' });
     const ipHash = await hash(`ip:${ip}`);
     const limited =
-      (await bindingLimit(ip)) ||
       (await limit(`signin-ip:${ipHash}`, L.signinPerIp, HOUR, 'Too many sign-in attempts from your connection. Try again later.')) ||
       (await humanCheck(body, ip)) ||
       (await limit(`signin-email:${await hash(email)}`, L.signinPerEmail, 15 * MIN, 'We just sent a link to that address. Check your inbox, or try again in a few minutes.'));
@@ -233,7 +236,6 @@ export function createApp(deps) {
     // people (per site, whole app per day) are counted further down, only for
     // audits that will really run, so refused requests cannot use them up.
     const limited =
-      (await bindingLimit(ip)) ||
       (await limit(`audit-ip:${ipHash}`, L.auditPerIp, 10 * MIN, 'Too many audits from your connection. Try again in a few minutes.')) ||
       (await limit(`audit-user:${user.id}`, L.auditPerAccount, HOUR, 'You have run a lot of audits in the last hour. Try again later.')) ||
       (pro ? null : await humanCheck(body, ip));
@@ -342,31 +344,52 @@ export function createApp(deps) {
     return json(200, { ok: true, watchUrl: target.url, nextCheckAt: nextAt });
   }
 
+  // Each checkout or portal request calls Stripe, so they are limited per account.
+  const billingLimit = (user) => limit(`billing:${user.id}`, L.billingPerUser, 10 * MIN, 'Too many billing requests. Try again in a few minutes.');
+
   async function checkout(request) {
     const user = await currentUser(request);
     if (!user) return json(401, { error: 'Sign in first.' });
     if (!deps.stripe || !config.billing) return json(503, { error: 'Payments are not set up yet.' });
-    if (store.isPro(user, now())) return json(409, { error: 'You already have the plan. Use Billing to manage it.' });
-    let fresh = user;
-    if (!fresh.stripe_customer_id) {
-      const customer = await deps.stripe.createCustomer({ email: user.email, userId: user.id });
-      fresh = await store.setStripeCustomer(user.id, customer.id);
+    if (store.isPro(user, now()) || LIVE_SUB.has(user.sub_status)) return json(409, { error: 'You already have the plan. Use Billing to manage it.' });
+    // A checkout already open in another tab is reused, so two tabs cannot
+    // start two subscriptions.
+    if (user.checkout_url && user.checkout_expires_at > now() + 5 * MIN) return json(200, { url: user.checkout_url });
+    const limited = await billingLimit(user);
+    if (limited) return limited;
+    const t = now();
+    if (!(await store.lockCheckout(user.id, t))) return json(409, { error: 'A checkout is already opening in another tab. Use that one, or try again in a minute.' });
+    try {
+      let fresh = user;
+      if (!fresh.stripe_customer_id) {
+        const customer = await deps.stripe.createCustomer({ email: user.email, userId: user.id });
+        fresh = await store.setStripeCustomer(user.id, customer.id);
+      }
+      const expiresAt = t + CHECKOUT_MINUTES * MIN;
+      const session = await deps.stripe.createCheckoutSession({
+        customer: fresh.stripe_customer_id,
+        price: config.billing.priceId,
+        userId: user.id,
+        successUrl: `${config.appOrigin}/?paid=1`,
+        cancelUrl: `${config.appOrigin}/`,
+        expiresAt: Math.floor(expiresAt / 1000),
+        idempotencyKey: `checkout-${user.id}-${t}`,
+      });
+      if (!isStripeUrl(session.url)) throw new Error('unexpected checkout url');
+      await store.saveCheckout(user.id, session.url, expiresAt);
+      return json(200, { url: session.url });
+    } catch (err) {
+      await store.clearCheckout(user.id).catch(() => {});
+      throw err;
     }
-    const session = await deps.stripe.createCheckoutSession({
-      customer: fresh.stripe_customer_id,
-      price: config.billing.priceId,
-      userId: user.id,
-      successUrl: `${config.appOrigin}/?paid=1`,
-      cancelUrl: `${config.appOrigin}/`,
-    });
-    if (!isStripeUrl(session.url)) throw new Error('unexpected checkout url');
-    return json(200, { url: session.url });
   }
 
   async function portal(request) {
     const user = await currentUser(request);
     if (!user) return json(401, { error: 'Sign in first.' });
     if (!deps.stripe || !config.billing) return json(503, { error: 'Payments are not set up yet.' });
+    const limited = await billingLimit(user);
+    if (limited) return limited;
     if (!user.stripe_customer_id) return json(404, { error: 'There is no billing account yet.' });
     const session = await deps.stripe.createPortalSession({ customer: user.stripe_customer_id, returnUrl: `${config.appOrigin}/` });
     if (!isStripeUrl(session.url)) throw new Error('unexpected portal url');
@@ -395,10 +418,16 @@ export function createApp(deps) {
     if (Boolean(event.livemode) === config.billing.testMode) return json(400, { error: 'Wrong mode.' });
     if (!(await store.markEvent(event.id, now()))) return json(200, { received: true, duplicate: true });
     try {
-      const change = describeEvent(event);
+      const change = describeEvent(event, config.billing);
       if (change?.kind === 'checkout') await store.linkCheckout(change);
       if (change?.kind === 'paid' && change.customer) await store.applyPaidInvoice(change);
       if (change?.kind === 'subscription' && change.customer) await store.applySubscriptionStatus(change);
+      if (change?.kind === 'ignored') log('paid invoice ignored: wrong', change.reason, change.invoiceId);
+      if (change?.kind === 'revoke') {
+        const customer = change.customer || (change.charge && idOf((await deps.stripe.retrieveCharge(change.charge)).customer));
+        if (customer) await store.revokePaid(customer);
+        log('paid access revoked after a', change.reason);
+      }
     } catch (err) {
       // Let Stripe retry later.
       await store.forgetEvent(event.id).catch(() => {});
@@ -415,6 +444,9 @@ export function createApp(deps) {
     const method = request.method;
     try {
       if (path === '/api/stripe/webhook') return method === 'POST' ? await webhook(request) : json(405, { error: 'Use POST.' });
+      // The Worker's per-IP limiter covers every other API route.
+      const flooded = await bindingLimit(ip);
+      if (flooded) return flooded;
 
       if (method === 'GET') {
         if (path === '/api/me') return await me(request);
