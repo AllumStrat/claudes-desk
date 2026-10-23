@@ -1,14 +1,22 @@
 # Copy to wrangler.toml to run locally (npx wrangler dev). Nothing is deployed.
 # Secrets, set with `npx wrangler secret put NAME` (never in this file):
 #   ANTHROPIC_API_KEY   the Claude API key the writer bills to
-#   WRITER_TOKEN        a long random string; callers send it as a Bearer token
+#   WRITER_TOKEN        a random string of 32 characters or more (openssl rand -hex 32);
+#                       callers send it as a Bearer token. Shorter ones are refused.
+# Before deploying, put Cloudflare Access in front of the route and set a monthly
+# spend limit on the Anthropic key's workspace (README, The Worker).
 name = "allum-seo-writer"
 main = "src/worker/index.js"
 compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
+# To stop model calls when a client disconnects, add the request.signal flag
+# (confirm the name in Cloudflare's compatibility flags docs first):
+# compatibility_flags = ["nodejs_compat", "enable_request_signal"]
 
 [vars]
 # Optional per-step effort override, as JSON:
 # WRITER_EFFORT = '{"draft":"high"}'
 # Model, if not Sonnet 5.5:
 # WRITER_MODEL = "claude-haiku-5-5"
+# Most one page may spend, in dollars (default 1):
+# WRITER_MAX_SPEND = "1"
