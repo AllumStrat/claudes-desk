@@ -183,3 +183,20 @@ test('FAQPage answers match the visible copy', () => {
   assert.equal(pairs.length, 5);
   assert.deepEqual(pairs[1], { q: 'Do you work on trucks and SUVs?', a: 'Yes. We work on light trucks and SUVs, including half-ton pickups and three-row crossovers.' });
 });
+
+test('the spend cap stops the run before the next call and reports what was spent', async () => {
+  const llm = H.fakeLlm(answers());
+  await assert.rejects(writePage(H.brief(), { llm, net: net(), config: { maxSpend: 0.05 } }), (e) => e instanceof WriterError && e.code === 'SPEND_CAP' && e.usage.calls === llm.calls.length && e.usage.cost >= 0.05 && /\$0\.05/.test(e.message));
+  assert.ok(llm.calls.length < 3);
+  assert.equal(resolveConfig().maxSpend, 1);
+  assert.throws(() => resolveConfig({ maxSpend: 0 }), /maxSpend/);
+  assert.throws(() => resolveConfig({ maxSpend: NaN }), /maxSpend/);
+});
+
+test('an aborted signal stops the run before the next model call', async () => {
+  const controller = new AbortController();
+  const llm = H.fakeLlm(answers({ plan: () => (controller.abort(), H.plan()) }));
+  await assert.rejects(writePage(H.brief(), { llm, net: net(), signal: controller.signal }), (e) => e.code === 'ABORTED' && e.usage.calls === 1);
+  assert.deepEqual(steps(llm), ['plan']);
+  assert.equal(llm.calls[0].signal, controller.signal);
+});

@@ -87,13 +87,15 @@ export function createClaude({ config, apiKey, client, fetch: fetchImpl } = {}) 
   const anthropic = client || new Anthropic({ ...(apiKey ? { apiKey } : {}), ...(fetchImpl ? { fetch: fetchImpl } : {}), maxRetries: 3 });
   return {
     /** key: the response field this step fills (plan, sources, draft, edit or fix). */
-    async call({ step, key, system, blocks, effort }) {
+    async call({ step, key, system, blocks, effort, signal }) {
       const params = buildRequest({ system, blocks, effort, config });
       let msg;
       try {
-        // Streaming keeps a long answer clear of HTTP timeouts.
-        msg = await anthropic.beta.messages.stream(params).finalMessage();
+        // Streaming keeps a long answer clear of HTTP timeouts. The signal
+        // cancels the stream when the caller goes away.
+        msg = await anthropic.beta.messages.stream(params, signal ? { signal } : undefined).finalMessage();
       } catch (err) {
+        if (err instanceof Anthropic.APIUserAbortError || signal?.aborted) throw new LlmError('ABORTED', `The ${step} call was cancelled because the caller went away.`, { step });
         if (err instanceof Anthropic.AuthenticationError) throw new LlmError('AUTH', 'The Anthropic API key was refused.', { step });
         if (err instanceof Anthropic.RateLimitError) throw new LlmError('RATE_LIMIT', 'The Anthropic API is rate limiting this key; try again shortly.', { step });
         if (err instanceof Anthropic.BadRequestError) throw new LlmError('BAD_REQUEST', `The API refused the ${step} request: ${err.message}`, { step });

@@ -46,6 +46,7 @@ export function wordsTarget(brief, params, config) {
  * @param {object} [deps.config]            overrides for config.js
  * @param {boolean} [deps.live]             run check.py's --live link check
  * @param {(step:string, info?:object)=>void} [deps.onProgress]
+ * @param {AbortSignal} [deps.signal]      the caller went away: make no more model calls
  */
 export async function writePage(input, deps) {
   const config = resolveConfig(deps.config);
@@ -62,7 +63,7 @@ export async function writePage(input, deps) {
   }
 }
 
-async function run(input, { llm, net = null, live = false, onProgress = () => {} }, config, usage) {
+async function run(input, { llm, net = null, live = false, onProgress = () => {}, signal = null }, config, usage) {
   const { params, banned } = RULES;
   const brief = normalizeBrief(input);
   const target = wordsTarget(brief, params, config);
@@ -76,8 +77,13 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
   const briefText = { text: P.briefBlock(brief, ctx), cache: true };
 
   const call = async (step, key, blocks, effort) => {
+    if (signal?.aborted) throw new WriterError('ABORTED', `The caller went away; stopped before ${step}.`);
+    const spent = usage.totals().cost;
+    if (spent >= config.maxSpend) {
+      throw new WriterError('SPEND_CAP', `Stopped before ${step}: $${spent.toFixed(4)} spent, and the cap for one page is $${config.maxSpend.toFixed(2)}.`);
+    }
     onProgress(step);
-    const r = await llm.call({ step, key, system: P.SYSTEM_PROMPT, blocks, effort });
+    const r = await llm.call({ step, key, system: P.SYSTEM_PROMPT, blocks, effort, signal });
     usage.add(step, r.usage, r.model);
     return r.data;
   };

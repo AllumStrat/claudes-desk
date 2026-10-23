@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Write one page from a brief:
-//   npm run write -- brief.json [--out dir] [--model id] [--live] [--effort draft=high] [--no-fallbacks]
+//   npm run write -- brief.json [--out dir] [--model id] [--live] [--effort draft=high] [--max-spend 1] [--no-fallbacks]
 // Needs ANTHROPIC_API_KEY in the environment. Writes the copy doc and a
 // usage log to the out folder and prints the check report and cost.
 
@@ -23,6 +23,7 @@ const { values, positionals } = parseArgs({
     offline: { type: 'boolean', default: false },
     effort: { type: 'string', multiple: true, default: [] },
     'max-fix-rounds': { type: 'string' },
+    'max-spend': { type: 'string' },
     'no-fallbacks': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -35,6 +36,7 @@ if (values.help || positionals.length !== 1) {
   --offline            no network: no sitemap, sibling or source checks (and no external links)
   --effort step=level  per-step effort, e.g. --effort draft=high (plan, draft, edit, fix, sources)
   --max-fix-rounds n   check-and-fix rounds before giving up (default 3)
+  --max-spend dollars  stop before the next model call once this much is spent (default 1)
   --no-fallbacks       turn off the server-side refusal fallback
 Needs ANTHROPIC_API_KEY.`);
   process.exit(values.help ? 0 : 2);
@@ -46,12 +48,19 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 
 const effort = Object.fromEntries(values.effort.map((e) => e.split('=')));
-const config = resolveConfig({
-  effort,
-  ...(values.model ? { model: values.model } : {}),
-  ...(values['max-fix-rounds'] ? { maxFixRounds: Number(values['max-fix-rounds']) } : {}),
-  ...(values['no-fallbacks'] ? { fallbacks: false } : {}),
-});
+let config;
+try {
+  config = resolveConfig({
+    effort,
+    ...(values.model ? { model: values.model } : {}),
+    ...(values['max-fix-rounds'] ? { maxFixRounds: Number(values['max-fix-rounds']) } : {}),
+    ...(values['max-spend'] ? { maxSpend: Number(values['max-spend']) } : {}),
+    ...(values['no-fallbacks'] ? { fallbacks: false } : {}),
+  });
+} catch (err) {
+  console.error(err.message);
+  process.exit(2);
+}
 
 const brief = JSON.parse(await readFile(resolve(positionals[0]), 'utf8'));
 const net = values.offline ? null : createNet(createNodeNetwork());

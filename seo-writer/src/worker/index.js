@@ -2,8 +2,11 @@
 //   POST /api/write   Authorization: Bearer <WRITER_TOKEN>
 //   body: { "brief": {...}, "live": false }
 // Answers with the copy doc and what the page cost. Internal use only: one
-// shared token, no accounts. A run takes a few minutes, and the caller has to
-// hold the connection open for all of it.
+// shared token of at least 32 characters, no accounts, and a per-page spend
+// cap (WRITER_MAX_SPEND). Put Cloudflare Access in front of it and set a
+// spend limit on the Anthropic key before deploying (README, The Worker).
+// A run takes a few minutes, and the caller has to hold the connection open
+// for all of it.
 
 import { writePage } from '../core/pipeline.js';
 import { createClaude, LlmError } from '../core/llm.js';
@@ -12,6 +15,10 @@ import { createNet } from '../core/net.js';
 import { createDohResolver } from '../core/doh.js';
 import { copyDocName } from '../core/copydoc.js';
 import { BriefError } from '../core/brief.js';
+
+// A shared token is only as good as its length. Shorter ones are refused at
+// startup; better still, put Cloudflare Access in front (see the README).
+export const MIN_TOKEN_LENGTH = 32;
 
 // The largest request body accepted. A full brief with ten pasted siblings
 // is well under it.
@@ -64,6 +71,9 @@ export async function handle(request, env, deps = {}) {
   if (url.pathname !== '/api/write') return json(404, { error: 'Not found' });
   if (request.method !== 'POST') return json(405, { error: 'Use POST' });
   if (!env.WRITER_TOKEN || !env.ANTHROPIC_API_KEY) return json(503, { error: 'The writer is not set up yet (WRITER_TOKEN and ANTHROPIC_API_KEY).' });
+  if (String(env.WRITER_TOKEN).length < MIN_TOKEN_LENGTH) {
+    return json(503, { error: `WRITER_TOKEN is too short; use a random string of at least ${MIN_TOKEN_LENGTH} characters (openssl rand -hex 32).` });
+  }
   const auth = request.headers.get('authorization') || '';
   if (!auth.startsWith('Bearer ') || !sameToken(auth.slice(7), env.WRITER_TOKEN)) return json(401, { error: 'Unauthorized' });
 
@@ -78,18 +88,27 @@ export async function handle(request, env, deps = {}) {
   if (!body || typeof body !== 'object') return json(400, { error: 'Send JSON: { "brief": {...} }' });
   let config;
   try {
-    config = resolveConfig({ ...(env.WRITER_EFFORT ? { effort: JSON.parse(env.WRITER_EFFORT) } : {}), ...(env.WRITER_MODEL ? { model: env.WRITER_MODEL } : {}) });
+    config = resolveConfig({
+      ...(env.WRITER_EFFORT ? { effort: JSON.parse(env.WRITER_EFFORT) } : {}),
+      ...(env.WRITER_MODEL ? { model: env.WRITER_MODEL } : {}),
+      ...(env.WRITER_MAX_SPEND ? { maxSpend: Number(env.WRITER_MAX_SPEND) } : {}),
+    });
   } catch {
-    return json(503, { error: 'WRITER_EFFORT or WRITER_MODEL is not valid.' });
+    return json(503, { error: 'WRITER_EFFORT, WRITER_MODEL or WRITER_MAX_SPEND is not valid.' });
   }
   const fetchImpl = (u, init) => fetch(u, init);
   const llm = deps.llm || createClaude({ config, apiKey: env.ANTHROPIC_API_KEY, fetch: fetchImpl });
   const net = deps.net || createNet({ fetchImpl, resolveHost: createDohResolver({ fetchImpl }) });
   try {
-    const r = await writePage(body.brief, { llm, net, live: body.live === true, config });
+    // request.signal fires when the client disconnects (Workers need the
+    // enable_request_signal compatibility flag); the run then makes no more
+    // model calls. Without it, a dropped run finishes and its cost is spent.
+    const r = await writePage(body.brief, { llm, net, live: body.live === true, config, signal: request.signal });
     return json(200, { status: r.status, name: copyDocName(r), copyDoc: r.copyDoc, report: r.check?.report ?? null, confirms: r.confirms ?? [], usage: r.usage });
   } catch (err) {
     if (err instanceof BriefError) return json(400, { error: err.message });
+    if (err.code === 'SPEND_CAP') return json(402, { error: err.message, code: err.code, usage: err.usage });
+    if (err.code === 'ABORTED') return json(499, { error: err.message, code: err.code, usage: err.usage });
     if (err instanceof LlmError) return json(502, { error: err.message, code: err.code, usage: err.usage });
     console.error('write failed', err?.message);
     return json(500, { error: 'The writer failed.', usage: err.usage });

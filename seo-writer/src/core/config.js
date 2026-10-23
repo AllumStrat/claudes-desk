@@ -39,6 +39,11 @@ export const DEFAULTS = {
   // words_target. Clamped to PARAMETERS.md content.words. The competitors
   // tier replaces this with the top-3 median from serp.py.
   lengthByType: { service: 1200, location: 1100, blog: 1400 },
+  // Dollars one page may spend. The writer checks the running cost before
+  // each model call and stops once it reaches this, returning what was spent,
+  // so a run can pass it by at most one call. --max-spend on the CLI,
+  // WRITER_MAX_SPEND on the Worker. A typical page is $0.25 to $0.45.
+  maxSpend: 1,
   // Cap on sitemap URLs handed to the planner.
   maxSitemapUrls: 300,
   // Most source candidates taken from the model per round (the plan, then
@@ -52,6 +57,9 @@ export const DEFAULTS = {
 export function resolveConfig(overrides = {}) {
   const model = overrides.model || DEFAULTS.model;
   if (!PRICING[model]) throw new Error(`Unknown model '${model}'. Use one of: ${Object.keys(PRICING).join(', ')}.`);
+  if (overrides.maxSpend != null && !(Number.isFinite(overrides.maxSpend) && overrides.maxSpend > 0)) {
+    throw new Error(`maxSpend must be a number of dollars above 0, not '${overrides.maxSpend}'.`);
+  }
   return {
     ...DEFAULTS,
     ...overrides,

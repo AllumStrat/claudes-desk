@@ -63,12 +63,15 @@ test('readAnswer turns refusals, truncation and bad JSON into LlmErrors', () => 
 
 function fakeClient(result) {
   const sent = [];
+  const options = [];
   return {
     sent,
+    options,
     beta: {
       messages: {
-        stream(params) {
+        stream(params, opts) {
           sent.push(params);
+          options.push(opts);
           return {
             finalMessage: async () => {
               if (result instanceof Error) throw result;
@@ -107,4 +110,13 @@ test('createClaude maps API errors to plain codes', async () => {
     const llm = createClaude({ config, client: fakeClient(err) });
     await assert.rejects(llm.call({ step: 'draft', system: 's', blocks: [{ text: 'b' }], effort: 'low' }), (e) => e.code === code && e.step === 'draft');
   }
+});
+
+test('createClaude passes the abort signal to the stream and reports a cancel as ABORTED', async () => {
+  const controller = new AbortController();
+  const ok = fakeClient({ stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: '{"a":1}' }] });
+  await createClaude({ config, client: ok }).call({ step: 'plan', system: 's', blocks: [{ text: 'b' }], effort: 'low', signal: controller.signal });
+  assert.equal(ok.options[0].signal, controller.signal);
+  const cancelled = fakeClient(new Anthropic.APIUserAbortError());
+  await assert.rejects(createClaude({ config, client: cancelled }).call({ step: 'draft', system: 's', blocks: [{ text: 'b' }], effort: 'low', signal: controller.signal }), (e) => e.code === 'ABORTED');
 });
