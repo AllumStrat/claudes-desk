@@ -5,7 +5,7 @@
 // target, frontmatter, source checks, link rules and check.py.
 
 import { SEO_WRITING_PARAMETERS, ANTI_AI_WRITING_SKILL } from './rules.generated.js';
-import { checkDraft, parseParams, parseBanned, parseFrontmatter, domain, stripMd } from './check.js';
+import { checkDraft, parseParams, parseBanned, parseFrontmatter, stripMd, findLinks, findImages } from './check.js';
 import { normalizeBrief } from './brief.js';
 import { resolveConfig } from './config.js';
 import { UsageLog } from './usage.js';
@@ -129,10 +129,12 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
   const unfixable = unfixableChecks(brief, sources, sitemapUrls);
   const changes = [];
   const warnNotes = [];
+  const safe = dropUnsafe(state, d.inbound_edits);
+  const notes = safe.dropped ? [`dropped ${safe.dropped} title, subhead, CTA or inbound-edit option${safe.dropped === 1 ? '' : 's'} that held HTML or a URL`] : [];
   let check;
   for (let round = 0; ; round++) {
     const draft = assemble(brief, plan, state, target.n);
-    check = await runChecks(draft, { params, banned, live: live && net ? net.status : null, siblings, brief, allowed });
+    check = await runChecks(draft, { params, banned, live: live && net ? net.status : null, siblings, brief, allowed, notes });
     const fixable = check.results.filter((r) => r[0] === 'FAIL' && !isUnfixable(r, unfixable));
     check.unfixable = check.results.filter((r) => r[0] === 'FAIL' && isUnfixable(r, unfixable));
     check.rounds = round;
@@ -154,7 +156,7 @@ async function run(input, { llm, net = null, live = false, onProgress = () => {}
     draft,
     state,
     edits: { fixes: e.fixes, eeat: e.eeat, changes, warnNotes },
-    inboundEdits: d.inbound_edits,
+    inboundEdits: safe.edits,
     check,
     confirms: [...draft.matchAll(/\[CONFIRM:\s*([^\]]+)\]/gi)].map((m) => m[1].trim()),
     usage: usage.totals(),
@@ -207,7 +209,7 @@ export function assemble(brief, plan, state, target) {
   return fm.join('\n') + String(state.body || '').trim() + '\n';
 }
 
-function allowedLinks(brief, sitemapUrls, verified) {
+export function allowedLinks(brief, sitemapUrls, verified) {
   const key = (u) => u.replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase();
   return {
     internal: new Set([...brief.internal_pages.map((p) => p.url), ...sitemapUrls].map(key)),
@@ -231,22 +233,109 @@ function unfixableChecks(brief, sources, sitemapUrls) {
 
 const isUnfixable = (r, list) => list.some((u) => u.check === r[1] && u.match.test(r[2]));
 
-/** check.py plus the writer's own rules: links outside the brief, retired names, UI words. */
-async function runChecks(draft, { params, banned, live, siblings, brief, allowed }) {
+// ---------- what may reach the copy ----------
+// The copy is pasted into a client's site, so the only links in it are
+// Markdown links to the brief's pages and the verified sources, and it holds
+// no HTML at all. Raw tags (<a href>, <script>, <img onerror>), autolinks
+// (<https://...>), bare URLs, reference-style link definitions ([r1]: url)
+// and images all fail, whatever the URL, so the fix loop asks the model to
+// take them out. A link to anything not on the allowed list fails too.
+
+const HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9:-]*(?=[\s/>]|$)|<!--|<![A-Za-z[]|<\?[A-Za-z]/g;
+const AUTOLINK = /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|<[^\s<>@]+@[^\s<>]+>/g;
+const BARE_URL = /\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s<>()]*|\bwww\.[^\s<>()]+|(?<![\w/])\/\/[A-Za-z0-9-]+\.[A-Za-z][^\s<>()]*/g;
+const REF_DEF = /^ {0,3}\[[^\]\n]+\]:.*$/gm;
+const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
+/** text with each [start, end) span replaced. */
+function cut(text, spans, fn) {
+  let out = '';
+  let last = 0;
+  for (const sp of spans) {
+    out += text.slice(last, sp.start) + fn(sp);
+    last = sp.end;
+  }
+  return out + text.slice(last);
+}
+
+const snip = (s) => {
+  const t = String(s).replace(/\s+/g, ' ').trim();
+  return t.length > 60 ? `${t.slice(0, 57)}...` : t;
+};
+
+/** Raw HTML, autolinks and bare URLs in a piece of text (links already taken out), as FAIL messages. */
+function unsafeText(text, where) {
+  const out = [];
+  for (const m of text.matchAll(AUTOLINK)) out.push(`URL in angle brackets in the ${where}: '${snip(m[0])}'; write it as a [descriptive anchor](url) link to an allowed page or drop it`);
+  const rest = text.replace(AUTOLINK, ' ');
+  for (const m of rest.matchAll(HTML_TAG)) {
+    const gt = rest.indexOf('>', m.index);
+    const tag = rest.slice(m.index, gt !== -1 && gt - m.index < 60 ? gt + 1 : m.index + 60);
+    out.push(`raw HTML in the ${where}: '${snip(tag)}'; the copy is plain Markdown, remove every HTML tag`);
+  }
+  for (const m of rest.matchAll(BARE_URL)) out.push(`bare URL in the ${where}: '${snip(m[0])}'; link only allowed pages, as [descriptive anchor](url)`);
+  return out;
+}
+
+/** Where a link in the copy points, checked against the allowed lists. Returns a FAIL message or null. */
+function linkProblem(url, brief, allowed) {
+  if (/^(mailto:|tel:|#)/i.test(url)) return null;
+  const abs = url.startsWith('//') ? `https:${url}` : url;
+  if (SCHEME.test(abs) && !/^https?:\/\//i.test(abs)) return `link to ${snip(url)} uses a scheme the copy may not link`;
+  if (/^https?:\/\//i.test(abs)) {
+    let u;
+    try {
+      u = new URL(abs);
+    } catch {
+      return `link ${snip(url)} is not a valid URL`;
+    }
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const onSite = (host === brief.site || host.endsWith('.' + brief.site)) && !u.username && !u.password;
+    if (!onSite) return allowed.external.has(allowed.key(abs)) ? null : `external link ${url} is not a verified source`;
+    return allowed.internal.has(allowed.key(u.pathname)) ? null : `internal link ${url} is not in the brief's page list`;
+  }
+  return allowed.internal.has(allowed.key(url)) ? null : `internal link ${url} is not in the brief's page list`;
+}
+
+/** Every FAIL for content that must not reach the copy: in the body, title and meta. */
+export function contentProblems(draft, { brief, allowed }) {
+  const { fm, body } = parseFrontmatter(draft);
+  const out = [];
+  for (const img of findImages(body)) out.push(`image in the body: '${snip(body.slice(img.start, img.end))}'; the copy holds no images`);
+  const noImages = cut(body, findImages(body), () => ' ');
+  const links = findLinks(noImages);
+  for (const l of links) {
+    const p = linkProblem(l.url.trim(), brief, allowed);
+    if (p) out.push(p);
+  }
+  for (const m of noImages.matchAll(REF_DEF)) out.push(`footnote-style link definition: '${snip(m[0])}'; write links inline as [anchor](url), to allowed pages only`);
+  out.push(...unsafeText(cut(noImages, links, (l) => ` ${l.anchor} `), 'body'));
+  for (const k of ['title', 'meta']) out.push(...unsafeText(String(fm[k] || ''), k));
+  return out;
+}
+
+/** Title, subhead and CTA options and inbound edits that hold HTML or a URL are dropped, not pasted. */
+function dropUnsafe(state, inbound) {
+  let dropped = 0;
+  const ok = (...texts) => {
+    const bad = texts.some((t) => unsafeText(String(t ?? ''), 'option').length);
+    if (bad) dropped++;
+    return !bad;
+  };
+  for (const k of ['title_options', 'subhead_options', 'cta_options']) state[k] = (state[k] || []).filter((o) => ok(o.text));
+  const edits = (inbound || []).filter((r) => ok(r.sentence, r.anchor));
+  return { edits, dropped };
+}
+
+/** check.py plus the writer's own rules: what may reach the copy, retired names, UI words. */
+async function runChecks(draft, { params, banned, live, siblings, brief, allowed, notes = [] }) {
   const base = await checkDraft(draft, { params, banned, status: live, siblings });
   const extra = [];
   const { body } = parseFrontmatter(draft);
-  for (const m of body.matchAll(/(?<!!)\[([^\]]+)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
-    const url = m[2];
-    if (/^(mailto:|tel:|#)/.test(url)) continue;
-    const isExternal = /^https?:\/\//i.test(url) && domain(url) !== brief.site && !domain(url).endsWith('.' + brief.site);
-    if (isExternal) {
-      if (!allowed.external.has(allowed.key(url))) extra.push(['FAIL', 'writer', `external link ${url} is not a verified source`]);
-    } else {
-      const path = /^https?:/i.test(url) ? new URL(url).pathname : url;
-      if (!allowed.internal.has(allowed.key(path))) extra.push(['FAIL', 'writer', `internal link ${url} is not in the brief's page list`]);
-    }
-  }
+  const unsafe = contentProblems(draft, { brief, allowed });
+  for (const msg of unsafe.slice(0, 12)) extra.push(['FAIL', 'writer', msg]);
+  if (unsafe.length > 12) extra.push(['FAIL', 'writer', `${unsafe.length - 12} more links, URLs or HTML tags like these`]);
+  for (const n of notes) extra.push(['WARN', 'writer', n]);
   const plain = stripMd(body);
   for (const name of brief.retired_names) {
     if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(plain)) {
@@ -260,7 +349,7 @@ async function runChecks(draft, { params, banned, live, siblings, brief, allowed
   results.sort((a, b) => order[a[0]] - order[b[0]]);
   const fails = results.filter((r) => r[0] === 'FAIL').length;
   const report = results.map(([l, c, m]) => `${l.padEnd(5)} ${c.padEnd(12)} ${m}`).join('\n') + (fails ? `\n\nRED: ${fails} FAIL` : '\n\nGREEN');
-  return { results, fails, green: fails === 0, report, stats: base.stats };
+  return { results, fails, green: fails === 0, report, stats: base.stats, unsafe: unsafe.length };
 }
 
 async function loadSiblings(brief, net) {

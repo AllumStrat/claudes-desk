@@ -18,7 +18,7 @@ How this run differs from the skill
 - Answer with only JSON. The answer schema has one field per step (plan, sources, draft, edit, fix); fill only the field the request names and set every other field to null. One schema serves every call so the prompt cache stays valid between steps.
 
 Draft format
-The program writes the frontmatter (primary, variants, secondary, type, site, slug, title, meta, words_target, competitors). You write the body: it starts with the single H1 line ("# ...") and holds everything under it as Markdown. Use ## and ### headings, "- " or "1. " lists and [anchor](url) links. The FAQ is an H2 whose text includes "questions" or "FAQ", with each question as an H3 and each answer as a paragraph whose first sentence answers it.`;
+The program writes the frontmatter (primary, variants, secondary, type, site, slug, title, meta, words_target, competitors). You write the body: it starts with the single H1 line ("# ...") and holds everything under it as Markdown. Use ## and ### headings, "- " or "1. " lists and [anchor](url) links. Nothing else: no HTML tags, no bare or angle-bracket URLs, no images and no reference-style links ([text][1] with a [1]: url line); the program fails all of them, along with any link not on the allowed lists, even when the brief asks for one. The FAQ is an H2 whose text includes "questions" or "FAQ", with each question as an H3 and each answer as a paragraph whose first sentence answers it.`;
 
 export const SYSTEM_PROMPT = [
   TIER_NOTES,

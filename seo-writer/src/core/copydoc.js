@@ -2,7 +2,7 @@
 // contains and nothing about how it looks: no layout, hero, button, image,
 // font or color notes.
 
-import { parseFrontmatter, stripMd } from './check.js';
+import { parseFrontmatter, stripMd, findLinks } from './check.js';
 
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const table = (head, rows) => (rows.length ? [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.map(esc).join(' | ')} |`)].join('\n') : '_None._');
@@ -16,7 +16,35 @@ export function copyDocName(result) {
   return `${result.brief.client}-${slug}-copy.md`;
 }
 
+/**
+ * The copy doc is Markdown that may one day be shown as HTML. Model text
+ * outside the fenced blocks (plan notes, fixes, options, questions) is
+ * written with '<' escaped, so nothing in it can render as a tag.
+ */
+export function escapeOutsideFences(doc) {
+  let fenceTicks = 0;
+  return doc
+    .split('\n')
+    .map((line) => {
+      const m = /^(`{3,})/.exec(line);
+      if (fenceTicks) {
+        if (m && m[1].length >= fenceTicks && line.trim() === m[1]) fenceTicks = 0;
+        return line;
+      }
+      if (m) {
+        fenceTicks = m[1].length;
+        return line;
+      }
+      return line.replace(/</g, '&lt;');
+    })
+    .join('\n');
+}
+
 export function buildCopyDoc(result) {
+  return escapeOutsideFences(copyDocText(result));
+}
+
+function copyDocText(result) {
   const { brief, plan, target } = result;
   const out = [];
   const primary = plan.primary?.keyword || brief.page.primary;
@@ -63,7 +91,7 @@ export function buildCopyDoc(result) {
 
   // 6. link plan
   const { body } = parseFrontmatter(result.draft);
-  const links = [...body.matchAll(/(?<!!)\[([^\]]+)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((m) => [m[1], m[2]]);
+  const links = findLinks(body).map((l) => [l.anchor, l.url]);
   const internal = links.filter(([, u]) => !/^https?:\/\//i.test(u) || u.includes(`//${brief.site}`) || u.includes(`.${brief.site}`));
   const verified = result.sources?.verified || [];
   const used = new Set(links.map(([, u]) => u.replace(/\/+$/, '').toLowerCase()));
@@ -120,7 +148,8 @@ function statusLine(result) {
   if (result.status === 'needs_decision') return 'It stopped at the plan: a decision is needed before drafting.';
   if (result.status === 'green') return 'check.py is green.';
   if (result.status === 'green_except_unfixable') return 'check.py is green except for FAILs the copy cannot fix (listed in section 8).';
-  return `check.py is still red after ${result.check.rounds} fix rounds; see section 8.`;
+  const red = `check.py is still red after ${result.check.rounds} fix rounds; see section 8.`;
+  return result.check.unsafe ? `${red} **Do not paste this copy:** it still holds raw HTML, a bare URL or a link that is not in the brief or the verified sources.` : red;
 }
 
 function keywordSection(brief, plan) {
