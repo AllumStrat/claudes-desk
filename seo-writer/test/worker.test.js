@@ -70,3 +70,53 @@ test('when the client disconnects, no further model calls are made', async () =>
   assert.equal(r.status, 499);
   assert.equal((await r.json()).usage.calls, 1);
 });
+
+const lines = async (r) => (await r.text()).trim().split('\n').map((l) => JSON.parse(l));
+
+test('Accept: application/x-ndjson streams each step, then the answer', async () => {
+  const req = post({ brief: H.brief() });
+  req.headers.set('accept', 'application/x-ndjson');
+  const r = await handle(req, env, deps());
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /ndjson/);
+  const events = await lines(r);
+  assert.deepEqual(events.filter((e) => e.type === 'step').map((e) => e.step), ['plan', 'draft', 'edit']);
+  const done = events.at(-1);
+  assert.equal(done.type, 'done');
+  assert.equal(done.code, 200);
+  assert.equal(done.data.status, 'green');
+});
+
+test('a streamed run that fails ends on its error and status code', async () => {
+  const req = post({ brief: H.brief() });
+  req.headers.set('accept', 'application/x-ndjson');
+  const done = (await lines(await handle(req, { ...env, WRITER_MAX_SPEND: '0.01' }, deps()))).at(-1);
+  assert.equal(done.code, 402);
+  assert.equal(done.data.code, 'SPEND_CAP');
+});
+
+test('GET /api/status says whether the writer can run, with no secrets', async () => {
+  const get = (e) => handle(new Request('https://writer.example/api/status'), e).then((r) => r.json());
+  assert.deepEqual(await get({}).then((d) => [d.ready, d.demo]), [false, false]);
+  const ok = await get(env);
+  assert.equal(ok.ready, true);
+  assert.equal(ok.model, 'claude-sonnet-5-5');
+  assert.equal(ok.maxSpend, 1);
+  assert.ok(!JSON.stringify(ok).includes(TOKEN));
+  assert.equal((await get({ WRITER_DEMO: '1' })).ready, true);
+  assert.equal((await handle(new Request('https://writer.example/api/status', { method: 'POST' }), env)).status, 405);
+});
+
+test('demo mode needs no token or key and never calls the real model', async () => {
+  const demoEnv = { WRITER_DEMO: '1' };
+  const req = new Request('https://writer.example/api/write', { method: 'POST', body: JSON.stringify({ brief: H.brief() }) });
+  const r = await handle(req, demoEnv, { llm: (await import('../src/core/demo.js')).createDemoLlm({ delayMs: 0 }) });
+  assert.equal(r.status, 200);
+  const data = await r.json();
+  assert.equal(data.demo, true);
+  assert.equal(data.status, 'green');
+  const bad = new Request('https://writer.example/api/write', { method: 'POST', body: JSON.stringify({ brief: { site: 'example.com' } }) });
+  const b = await handle(bad, demoEnv);
+  assert.equal(b.status, 400);
+  assert.match((await b.json()).error, /page.type/);
+});

@@ -20,3 +20,11 @@ compatibility_flags = ["nodejs_compat"]
 # WRITER_MODEL = "claude-haiku-5-5"
 # Most one page may spend, in dollars (default 1):
 # WRITER_MAX_SPEND = "1"
+# Canned model and network, no key, no token, no spend (src/core/demo.js):
+# WRITER_DEMO = "1"
+
+# Serve the web page (web/, `npm run build` there) from this Worker, so the
+# page and /api/* share one origin, e.g. a writer.allumstrategies.com route.
+# Matching files are served as assets; everything else reaches the Worker.
+# [assets]
+# directory = "./web/dist"
