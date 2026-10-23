@@ -58,7 +58,7 @@ export function readAnswer(msg) {
     const cat = msg.stop_details?.category;
     throw new LlmError('REFUSED', `The model declined this request${cat ? ` (${cat})` : ''}.`);
   }
-  if (msg.stop_reason === 'max_tokens') {
+  if (msg.stop_reason === 'max_tokens' || msg.stop_reason === 'model_context_window_exceeded') {
     throw new LlmError('TRUNCATED', 'The answer ran past max_tokens; raise maxTokens or lower effort.');
   }
   // After a fallback the answer is the text that follows the last fallback block.

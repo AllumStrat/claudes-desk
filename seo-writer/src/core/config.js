@@ -17,6 +17,14 @@ export const PRICING = {
 // Models the server-side refusal fallback works on. Haiku 5.5 has none.
 export const FALLBACK_MODELS = new Set(['claude-sonnet-5-5']);
 
+// Prices for models that can serve a call through the fallback but are not
+// a --model choice. With fallbacks: 'default', Sonnet 5.5 retries cyber and
+// frontier_llm declines on Sonnet 5, and that attempt bills at Sonnet 5's
+// rates. A model with no price here is costed at the requested model's.
+export const FALLBACK_PRICING = {
+  'claude-sonnet-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+};
+
 export const DEFAULTS = {
   model: MODEL,
   // Research tier. 'content' writes from the brief alone (SKILL.md steps 1, 2,

@@ -58,6 +58,7 @@ test('readAnswer reads only the text after the last fallback block', () => {
 test('readAnswer turns refusals, truncation and bad JSON into LlmErrors', () => {
   assert.throws(() => readAnswer({ stop_reason: 'refusal', stop_details: { category: 'cyber' }, content: [] }), (e) => e instanceof LlmError && e.code === 'REFUSED');
   assert.throws(() => readAnswer({ stop_reason: 'max_tokens', content: [] }), (e) => e.code === 'TRUNCATED');
+  assert.throws(() => readAnswer({ stop_reason: 'model_context_window_exceeded', content: [] }), (e) => e.code === 'TRUNCATED');
   assert.throws(() => readAnswer({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'not json' }] }), (e) => e.code === 'BAD_JSON');
 });
 
@@ -119,4 +120,31 @@ test('createClaude passes the abort signal to the stream and reports a cancel as
   assert.equal(ok.options[0].signal, controller.signal);
   const cancelled = fakeClient(new Anthropic.APIUserAbortError());
   await assert.rejects(createClaude({ config, client: cancelled }).call({ step: 'draft', system: 's', blocks: [{ text: 'b' }], effort: 'low', signal: controller.signal }), (e) => e.code === 'ABORTED');
+});
+
+// Structured outputs accept object, array, string, integer, number, boolean,
+// null, enum, const, anyOf, allOf and $ref; every object needs
+// additionalProperties: false. Length, range and recursion are not supported.
+test('the response schema uses only what structured outputs accept', () => {
+  const KEYS = new Set(['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'anyOf', 'description']);
+  const TYPES = new Set(['object', 'array', 'string', 'integer', 'number', 'boolean', 'null']);
+  const walk = (node, path) => {
+    for (const k of Object.keys(node)) assert.ok(KEYS.has(k), `${path}: '${k}' is not supported`);
+    if (node.anyOf) return node.anyOf.forEach((n, i) => walk(n, `${path}.anyOf[${i}]`));
+    assert.ok(TYPES.has(node.type), `${path}: type ${node.type}`);
+    if (node.type === 'object') {
+      assert.equal(node.additionalProperties, false, `${path}: additionalProperties`);
+      assert.deepEqual([...node.required].sort(), Object.keys(node.properties).sort(), `${path}: every field required`);
+      for (const [k, v] of Object.entries(node.properties)) walk(v, `${path}.${k}`);
+    }
+    if (node.type === 'array') walk(node.items, `${path}[]`);
+  };
+  walk(RESPONSE_SCHEMA, 'response');
+});
+
+test('the request has only fields the beta MessageCreateParams type defines', () => {
+  const r = req();
+  assert.deepEqual(Object.keys(r).sort(), ['betas', 'fallbacks', 'max_tokens', 'messages', 'model', 'output_config', 'system', 'thinking'].sort());
+  assert.deepEqual(Object.keys(r.output_config).sort(), ['effort', 'format']);
+  assert.ok(['low', 'medium', 'high', 'xhigh', 'max'].includes(r.output_config.effort));
 });
